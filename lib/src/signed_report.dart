@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'attestation.dart';
 import 'report.dart';
 import 'signal.dart';
 
@@ -88,6 +89,7 @@ class SignedReport {
     required this.payload,
     required this.signature,
     required this.report,
+    this.attestation,
   });
 
   /// Builds the text that is signed. Keys are written in a fixed order and
@@ -130,6 +132,10 @@ class SignedReport {
   /// The scan the payload was built from, for local use.
   final AntiVirtualReport report;
 
+  /// Play Integrity token or App Attest object bound to [payload], when
+  /// requested with `verify(attestation: ...)`.
+  final PlatformAttestation? attestation;
+
   String get publicKey => signature.publicKey;
 
   /// What to send to the backend.
@@ -141,6 +147,7 @@ class SignedReport {
     'protection': signature.protection.name,
     'attested': signature.attested,
     'certificateChain': signature.certificateChain,
+    if (attestation != null) 'attestation': attestation!.toJson(),
   };
 
   @override

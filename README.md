@@ -119,7 +119,9 @@ On Android the key is attested by the secure hardware (StrongBox or TEE) with
 the SHA-256 of the nonce as challenge, so your server can prove the request is
 live, comes from a locked, verified-boot device and from your release-signed
 app. iOS signs with a Secure Enclave key; bind it to App Attest for device
-proof. What the server has to check is in
+proof. Add `attestation: AttestationOptions()` to also get a Play Integrity token
+(Android) or an App Attest attestation/assertion (iOS) bound to the same
+payload. What the server has to check is in
 [`doc/server-verification.md`](doc/server-verification.md).
 
 ## Choosing checks

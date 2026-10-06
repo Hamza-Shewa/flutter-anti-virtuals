@@ -95,6 +95,8 @@ void main() {
     );
   });
 
+  attestationTests();
+
   test('device signatures decode unknown protection as software', () {
     final signature = DeviceSignature.fromMap(<Object?, Object?>{
       'signature': 'a',
@@ -105,5 +107,95 @@ void main() {
     expect(signature.protection, KeyProtection.software);
     expect(signature.attested, isFalse);
     expect(signature.certificateChain, isEmpty);
+  });
+}
+
+class _AttestingPlatform extends _Platform {
+  final List<(String, AttestationOptions)> attested = [];
+  Object? attestError;
+
+  @override
+  Future<PlatformAttestation> requestAttestation(
+    String payload,
+    AttestationOptions options,
+  ) async {
+    if (attestError != null) throw attestError!;
+    attested.add((payload, options));
+    return const PlatformAttestation(
+      type: AttestationType.appAttest,
+      token: 'b2JqZWN0',
+      keyId: 'key-1',
+      isAssertion: true,
+    );
+  }
+}
+
+void attestationTests() {
+  group('attestation', () {
+    const nonce = 'nonce-from-the-backend-0001';
+    late _AttestingPlatform platform;
+
+    setUp(() {
+      platform = _AttestingPlatform();
+      FlutterAntiVirtualsPlatform.instance = platform;
+    });
+
+    test('is bound to the signed payload and sent with the report', () async {
+      final signed = await FlutterAntiVirtuals.instance.verify(
+        nonce: nonce,
+        attestation: const AttestationOptions(cloudProjectNumber: 42),
+      );
+
+      expect(platform.attested.single.$1, signed.payload);
+      expect(platform.attested.single.$2.cloudProjectNumber, 42);
+      expect(signed.attestation?.type, AttestationType.appAttest);
+      expect(signed.toJson()['attestation'], {
+        'type': 'appAttest',
+        'token': 'b2JqZWN0',
+        'keyId': 'key-1',
+        'assertion': true,
+      });
+    });
+
+    test('is not requested unless asked for', () async {
+      final signed = await FlutterAntiVirtuals.instance.verify(nonce: nonce);
+      expect(platform.attested, isEmpty);
+      expect(signed.attestation, isNull);
+      expect(signed.toJson(), isNot(contains('attestation')));
+    });
+
+    test('a failed attestation throws instead of returning a report', () {
+      platform.attestError = StateError('not supported');
+      expect(
+        () => FlutterAntiVirtuals.instance.verify(
+          nonce: nonce,
+          attestation: const AttestationOptions(),
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('decodes what the channel returns', () {
+      final play = PlatformAttestation.fromMap(<Object?, Object?>{
+        'type': 'playIntegrity',
+        'token': 'jwe',
+      });
+      expect(play.type, AttestationType.playIntegrity);
+      expect(play.toJson(), {'type': 'playIntegrity', 'token': 'jwe'});
+      expect(
+        () => PlatformAttestation.fromMap(<Object?, Object?>{'type': 'x'}),
+        throwsFormatException,
+      );
+    });
+
+    test('options go over the channel as a map', () {
+      expect(
+        const AttestationOptions(
+          cloudProjectNumber: 7,
+          resetAppAttestKey: true,
+        ).toMap(),
+        {'cloudProjectNumber': 7, 'resetAppAttestKey': true},
+      );
+    });
   });
 }
