@@ -5,10 +5,12 @@ Android and iOS, and reports each finding with evidence so your backend can
 decide what to do.
 
 ```dart
+// Every check is on by default.
 final report = await FlutterAntiVirtuals.instance.scan(
-  const ScanOptions(
+  ScanOptions(
     expectedSignatureSha256: ['<release cert sha256>'],
     allowedAccessibilityServices: ['com.google.android.marvin.talkback'],
+    checkClockTampering: false, // switch off what you do not need
   ),
 );
 
@@ -21,6 +23,22 @@ if (report.hasAny({
   // block, warn, or just send report.toJson() to your server
 }
 ```
+
+## Choosing checks
+
+`ScanOptions` has one boolean per signal (`checkVpn`, `checkProxy`,
+`checkMockLocation`, ...), all `true` by default. Checks that need
+configuration assert that it was provided, so a misconfigured scan fails in
+debug builds instead of silently doing nothing:
+
+| Flag | Needs |
+| --- | --- |
+| `checkSignatureMismatch` | `expectedSignatureSha256`. The default is `null`, meaning "run when hashes are provided", so a bare `ScanOptions()` still works. `true` without hashes is an assertion failure; `false` turns it off. |
+| `checkUntrustedInstaller` | A non-empty `trustedInstallers` (defaults to the major app stores) |
+
+`checkClockTampering` works without `trustedTime` (it then only looks at the
+automatic date/time settings); pass `trustedTime` from a server response to
+also compare the clock.
 
 ## Signals
 

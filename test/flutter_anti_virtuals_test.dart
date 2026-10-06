@@ -49,15 +49,19 @@ void main() {
 
   test('options are serialised for the platform', () async {
     await FlutterAntiVirtuals.instance.scan(
-      const ScanOptions(
-        signals: {AntiVirtualSignal.proxy},
+      ScanOptions(
+        checkVpn: false,
+        checkAdb: false,
         expectedSignatureSha256: ['AB12'],
-        maxClockSkew: Duration(seconds: 30),
+        maxClockSkew: const Duration(seconds: 30),
       ),
     );
     final args = lastCall!.arguments as Map;
     expect(lastCall!.method, 'scan');
-    expect(args['signals'], ['proxy']);
+    expect(args['signals'], isNot(contains('vpn')));
+    expect(args['signals'], isNot(contains('adb')));
+    expect(args['signals'], contains('proxy'));
+    expect(args['signals'], contains('signatureMismatch'));
     expect(args['expectedSignatureSha256'], ['ab12']);
     expect(args['maxClockSkewMs'], 30000);
   });
@@ -81,15 +85,75 @@ void main() {
     );
   });
 
-  test('copyWith keeps unchanged fields', () {
-    const original = ScanOptions(
-      expectedSignatureSha256: ['aa'],
-      maxClockSkew: Duration(seconds: 9),
-    );
-    final copy = original.copyWith(signals: {AntiVirtualSignal.adb});
-    expect(copy.expectedSignatureSha256, ['aa']);
-    expect(copy.maxClockSkew, const Duration(seconds: 9));
-    expect(copy.signals, {AntiVirtualSignal.adb});
+  group('ScanOptions', () {
+    test('every check is on by default; signature needs hashes to run', () {
+      final options = ScanOptions();
+      expect(
+        options.enabledSignals,
+        AntiVirtualSignal.values.toSet()
+          ..remove(AntiVirtualSignal.signatureMismatch),
+      );
+      expect(
+        ScanOptions(expectedSignatureSha256: ['aa']).enabledSignals,
+        AntiVirtualSignal.values.toSet(),
+      );
+    });
+
+    test('checkSignatureMismatch: true without hashes asserts', () {
+      expect(
+        () => ScanOptions(checkSignatureMismatch: true),
+        throwsA(isA<AssertionError>()),
+      );
+      expect(
+        ScanOptions(
+          checkSignatureMismatch: true,
+          expectedSignatureSha256: ['aa'],
+        ).enabledSignals,
+        contains(AntiVirtualSignal.signatureMismatch),
+      );
+    });
+
+    test('checkSignatureMismatch: false skips even with hashes', () {
+      final options = ScanOptions(
+        checkSignatureMismatch: false,
+        expectedSignatureSha256: ['aa'],
+      );
+      expect(
+        options.enabledSignals,
+        isNot(contains(AntiVirtualSignal.signatureMismatch)),
+      );
+    });
+
+    test('installer check needs trusted installers', () {
+      expect(
+        () => ScanOptions(trustedInstallers: const []),
+        throwsA(isA<AssertionError>()),
+      );
+      expect(
+        ScanOptions(
+          checkUntrustedInstaller: false,
+          trustedInstallers: const [],
+        ).enabledSignals,
+        isNot(contains(AntiVirtualSignal.untrustedInstaller)),
+      );
+    });
+
+    test('onlyChecking keeps configuration and disables the rest', () {
+      final only = ScanOptions(
+        expectedSignatureSha256: ['aa'],
+        maxClockSkew: const Duration(seconds: 9),
+      ).onlyChecking(AntiVirtualSignal.adb);
+      expect(only.enabledSignals, {AntiVirtualSignal.adb});
+      expect(only.expectedSignatureSha256, ['aa']);
+      expect(only.maxClockSkew, const Duration(seconds: 9));
+    });
+
+    test('single signature check without hashes asserts', () async {
+      await expectLater(
+        FlutterAntiVirtuals.instance.check(AntiVirtualSignal.signatureMismatch),
+        throwsA(isA<AssertionError>()),
+      );
+    });
   });
 
   test('channel errors propagate instead of looking clean', () async {
