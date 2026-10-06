@@ -13,8 +13,10 @@ class FlutterAntiVirtuals {
 
   static final FlutterAntiVirtuals instance = FlutterAntiVirtuals._();
 
-  /// Runs the requested checks and returns what was found. Never throws for a
-  /// failing individual check; those are reported as not detected.
+  /// Runs the requested checks and returns what was found. A check that fails
+  /// natively is reported as unsupported (not as clean). Channel errors such as
+  /// `PlatformException` or `MissingPluginException` propagate; treat them as a
+  /// failed scan rather than a clean device.
   Future<AntiVirtualReport> scan([ScanOptions options = const ScanOptions()]) =>
       FlutterAntiVirtualsPlatform.instance.scan(options);
 
@@ -23,16 +25,7 @@ class FlutterAntiVirtuals {
     AntiVirtualSignal signal, [
     ScanOptions options = const ScanOptions(),
   ]) async {
-    final report = await scan(
-      ScanOptions(
-        signals: {signal},
-        expectedSignatureSha256: options.expectedSignatureSha256,
-        trustedInstallers: options.trustedInstallers,
-        allowedAccessibilityServices: options.allowedAccessibilityServices,
-        maxClockSkew: options.maxClockSkew,
-        trustedTime: options.trustedTime,
-      ),
-    );
+    final report = await scan(options.copyWith(signals: {signal}));
     return report[signal] ?? const SignalResult.unsupported();
   }
 }

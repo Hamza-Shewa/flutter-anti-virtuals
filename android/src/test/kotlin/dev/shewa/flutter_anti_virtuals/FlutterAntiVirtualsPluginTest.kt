@@ -32,6 +32,8 @@ internal class RulesTest {
     fun clonedDataDirDetection() {
         assertFalse(Rules.isClonedDataDir("/data/user/0/a.b", "a.b", 0))
         assertFalse(Rules.isClonedDataDir("/data/user/10/a.b/", "a.b", 10))
+        assertFalse(Rules.isClonedDataDir("/mnt/expand/1234-abcd/user/0/a.b", "a.b", 0))
+        assertTrue(Rules.isClonedDataDir("/mnt/expand/1234-abcd/user/0/other.pkg", "a.b", 0))
         assertTrue(Rules.isClonedDataDir("/data/data/com.parallel/virtual/data/user/0/a.b", "a.b", 0))
     }
 
@@ -40,5 +42,16 @@ internal class RulesTest {
         assertTrue(Rules.isVirtualInterface("tun0"))
         assertTrue(Rules.isVirtualInterface("wg0"))
         assertFalse(Rules.isVirtualInterface("wlan0"))
+        assertFalse(Rules.isVirtualInterface("ipsec0"))
+    }
+
+    @Test
+    fun manifestQueriesMatchKnownPackages() {
+        val manifest = java.io.File("src/main/AndroidManifest.xml").readText()
+        val queried = Regex("<package android:name=\"([^\"]+)\"").findAll(manifest)
+            .map { it.groupValues[1] }.toSet()
+        val known = KnownPackages.mockLocation + KnownPackages.remoteControl +
+            KnownPackages.virtualCamera + KnownPackages.cloners
+        assertEquals(known, queried)
     }
 }

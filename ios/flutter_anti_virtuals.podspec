@@ -9,9 +9,9 @@ Pod::Spec.new do |s|
   s.description      = <<-DESC
 Integrity signal scanner for Flutter apps.
                        DESC
-  s.homepage         = 'http://example.com'
+  s.homepage         = 'https://github.com/Hamza-Shewa/flutter-anti-virtuals'
   s.license          = { :file => '../LICENSE' }
-  s.author           = { 'Your Company' => 'email@example.com' }
+  s.author           = { 'Hamza Shewa' => 'shewa.hz98@gmail.com' }
   s.source           = { :path => '.' }
   s.source_files = 'flutter_anti_virtuals/Sources/flutter_anti_virtuals/**/*'
   s.dependency 'Flutter'

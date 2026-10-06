@@ -70,34 +70,18 @@ final class AntiVirtualScanner {
   }
 
   private func vpn() -> Detection {
+    // Only `tap`, `tun` and `ppp` scoped interfaces count. `ipsec*` is kept up by
+    // Wi-Fi Calling / VoLTE and `utun3+` by Private Relay and Continuity, so those
+    // would flag ordinary iPhones. VPNs that only use utun are therefore not seen.
     var details: [String] = []
     if let settings = CFNetworkCopySystemProxySettings()?.takeRetainedValue() as? [String: Any],
       let scoped = settings["__SCOPED__"] as? [String: Any]
     {
-      for key in scoped.keys where ["tap", "tun", "ppp", "ipsec", "utun"].contains(where: key.hasPrefix) {
+      for key in scoped.keys where ["tap", "tun", "ppp"].contains(where: key.hasPrefix) {
         details.append("interface \(key)")
       }
     }
-    var ifaddr: UnsafeMutablePointer<ifaddrs>?
-    if getifaddrs(&ifaddr) == 0, let first = ifaddr {
-      var cursor: UnsafeMutablePointer<ifaddrs>? = first
-      while let current = cursor {
-        let name = String(cString: current.pointee.ifa_name)
-        let up = (current.pointee.ifa_flags & UInt32(IFF_UP)) != 0
-        // utun0-utun2 are used by the system itself; higher ones are VPNs.
-        if up, ["tap", "tun", "ppp", "ipsec"].contains(where: name.hasPrefix) || isExtraUtun(name) {
-          details.append("interface \(name)")
-        }
-        cursor = current.pointee.ifa_next
-      }
-      freeifaddrs(ifaddr)
-    }
-    return .of(Array(Set(details)).sorted())
-  }
-
-  private func isExtraUtun(_ name: String) -> Bool {
-    guard name.hasPrefix("utun"), let index = Int(name.dropFirst(4)) else { return false }
-    return index > 2
+    return .of(details.sorted())
   }
 
   private func proxy() -> Detection {
@@ -117,6 +101,14 @@ final class AntiVirtualScanner {
   }
 
   private func mockLocation() -> Detection {
+    // CLLocationManager needs a thread with a run loop; use the main thread so the
+    // cached `location` is populated. The scan runs on a worker queue, so this
+    // cannot deadlock.
+    if Thread.isMainThread { return mockLocationOnMain() }
+    return DispatchQueue.main.sync { mockLocationOnMain() }
+  }
+
+  private func mockLocationOnMain() -> Detection {
     #if targetEnvironment(simulator)
       return .unsupported
     #else

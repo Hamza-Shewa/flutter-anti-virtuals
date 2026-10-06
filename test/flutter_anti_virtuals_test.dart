@@ -69,4 +69,37 @@ void main() {
     expect(result.detected, isTrue);
     expect((lastCall!.arguments as Map)['signals'], ['vpn']);
   });
+
+  test('default trusted installers exclude the manual APK installer', () {
+    expect(
+      ScanOptions.defaultTrustedInstallers,
+      isNot(contains('com.google.android.packageinstaller')),
+    );
+    expect(
+      ScanOptions.defaultTrustedInstallers,
+      containsAll(['com.android.vending', 'com.sec.android.app.samsungapps']),
+    );
+  });
+
+  test('copyWith keeps unchanged fields', () {
+    const original = ScanOptions(
+      expectedSignatureSha256: ['aa'],
+      maxClockSkew: Duration(seconds: 9),
+    );
+    final copy = original.copyWith(signals: {AntiVirtualSignal.adb});
+    expect(copy.expectedSignatureSha256, ['aa']);
+    expect(copy.maxClockSkew, const Duration(seconds: 9));
+    expect(copy.signals, {AntiVirtualSignal.adb});
+  });
+
+  test('channel errors propagate instead of looking clean', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          throw PlatformException(code: 'boom');
+        });
+    expect(
+      FlutterAntiVirtuals.instance.scan(),
+      throwsA(isA<PlatformException>()),
+    );
+  });
 }

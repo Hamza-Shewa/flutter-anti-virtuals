@@ -67,8 +67,12 @@ internal class AntiVirtualScanner(private val context: Context) {
         return checks
             .filterKeys { config.signals == null || it in config.signals }
             .mapValues { (_, check) ->
-                // One failing check must never take the whole scan down.
-                try { check().toMap() } catch (_: Throwable) { Detection(false).toMap() }
+                // One failing check must never take the whole scan down, and must not
+                // look like a clean result either.
+                try { check().toMap() }
+                catch (t: Throwable) {
+                    Detection(false, supported = false, details = listOf("check failed: ${t.javaClass.simpleName}")).toMap()
+                }
             }
     }
 
@@ -77,14 +81,17 @@ internal class AntiVirtualScanner(private val context: Context) {
     private fun vpn(): Detection {
         val details = mutableListOf<String>()
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-        @Suppress("DEPRECATION")
-        cm?.allNetworks?.forEach { network ->
-            val caps = cm.getNetworkCapabilities(network)
-            if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true ||
-                caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == false
-            ) {
-                details += "network transport VPN"
+        try {
+            @Suppress("DEPRECATION")
+            cm?.allNetworks?.forEach { network ->
+                val caps = cm.getNetworkCapabilities(network)
+                if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true ||
+                    caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == false
+                ) {
+                    details += "network transport VPN"
+                }
             }
+        } catch (_: Throwable) {
         }
         try {
             NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
@@ -98,11 +105,14 @@ internal class AntiVirtualScanner(private val context: Context) {
     private fun proxy(): Detection {
         val details = mutableListOf<String>()
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-        cm?.defaultProxy?.let { p ->
-            if (!p.host.isNullOrBlank()) details += "system proxy ${p.host}:${p.port}"
-            if (p.pacFileUrl != null && p.pacFileUrl.toString().isNotBlank()) {
-                details += "PAC file ${p.pacFileUrl}"
+        try {
+            cm?.defaultProxy?.let { p ->
+                if (!p.host.isNullOrBlank()) details += "system proxy ${p.host}:${p.port}"
+                if (p.pacFileUrl != null && p.pacFileUrl.toString().isNotBlank()) {
+                    details += "PAC file ${p.pacFileUrl}"
+                }
             }
+        } catch (_: Throwable) {
         }
         for (key in listOf("http", "https")) {
             val host = System.getProperty("$key.proxyHost")
@@ -138,9 +148,6 @@ internal class AntiVirtualScanner(private val context: Context) {
             }
         }
         details += installed(KnownPackages.mockLocation).map { "mock app $it" }
-        details += installedWithPermission("android.permission.ACCESS_MOCK_LOCATION")
-            .filter { it !in KnownPackages.mockLocation }
-            .map { "app can mock location: $it" }
         return Detection.of(details.distinct())
     }
 
@@ -151,11 +158,17 @@ internal class AntiVirtualScanner(private val context: Context) {
     private fun virtualCamera(): Detection {
         val details = installed(KnownPackages.virtualCamera).map { "virtual camera app $it" }.toMutableList()
         val cm = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
-        cm?.cameraIdList?.forEach { id ->
-            val facing = cm.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING)
-            if (facing == CameraCharacteristics.LENS_FACING_EXTERNAL) {
-                details += "external camera $id"
+        try {
+            cm?.cameraIdList?.forEach { id ->
+                try {
+                    val facing = cm.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING)
+                    if (facing == CameraCharacteristics.LENS_FACING_EXTERNAL) {
+                        details += "external camera $id"
+                    }
+                } catch (_: Throwable) {
+                }
             }
+        } catch (_: Throwable) {
         }
         return Detection.of(details)
     }
@@ -194,10 +207,9 @@ internal class AntiVirtualScanner(private val context: Context) {
         else @Suppress("DEPRECATION") pm.getPackageInfo(context.packageName, flags)
 
     private fun untrustedInstaller(config: ScanConfig): Detection {
-        // Debug builds are installed by tooling; do not flag developers.
-        if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
-            return Detection(false, details = listOf("debuggable build, skipped"))
-        }
+        // No debuggable exemption: a repackaged APK can set the flag itself. Builds
+        // installed by tooling report no installer; exclude the signal in debug builds
+        // from the Dart side if that is unwanted.
         val installer = if (Build.VERSION.SDK_INT >= 30) pm.getInstallSourceInfo(context.packageName).installingPackageName
         else @Suppress("DEPRECATION") pm.getInstallerPackageName(context.packageName)
         return if (Rules.isUntrustedInstaller(installer, config.trustedInstallers)) {
@@ -262,16 +274,5 @@ internal class AntiVirtualScanner(private val context: Context) {
             else @Suppress("DEPRECATION") pm.getPackageInfo(pkg, 0)
             true
         } catch (_: PackageManager.NameNotFoundException) { false }
-    }
-
-    private fun installedWithPermission(permission: String): List<String> {
-        val packages = if (Build.VERSION.SDK_INT >= 33)
-            pm.getInstalledPackages(PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()))
-        else @Suppress("DEPRECATION") pm.getInstalledPackages(PackageManager.GET_PERMISSIONS)
-        return packages
-            .filter { it.applicationInfo?.flags?.and(ApplicationInfo.FLAG_SYSTEM) == 0 }
-            .filter { it.requestedPermissions?.contains(permission) == true }
-            .map { it.packageName }
-            .filter { it != context.packageName }
     }
 }

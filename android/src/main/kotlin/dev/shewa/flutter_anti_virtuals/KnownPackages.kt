@@ -93,6 +93,4 @@ internal object KnownPackages {
         "info.red.virtual",
         "com.cloneapp.parallel"
     )
-
-    val all: Set<String> = mockLocation + remoteControl + virtualCamera + cloners
 }

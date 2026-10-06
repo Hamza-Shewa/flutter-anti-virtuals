@@ -49,12 +49,17 @@ internal object Rules {
             "/data/data/$packageName",
             "/data/user_de/$userId/$packageName"
         )
-        return dataDir.trimEnd('/') !in expected
+        val dir = dataDir.trimEnd('/')
+        if (dir in expected) return false
+        // Apps moved to adopted (portable) storage live under /mnt/expand/<uuid>/.
+        val adopted = Regex("^/mnt/expand/[^/]+/(user|user_de)/\\d+/${Regex.escape(packageName)}$")
+        return !adopted.matches(dir)
     }
 
     fun isVirtualInterface(name: String): Boolean {
         val n = name.lowercase()
+        // `ipsec*` is deliberately absent: Wi-Fi Calling / VoLTE keep those up.
         return n.startsWith("tun") || n.startsWith("ppp") || n.startsWith("tap") ||
-            n.startsWith("wg") || n.startsWith("ipsec") || n.startsWith("pptp")
+            n.startsWith("wg") || n.startsWith("pptp")
     }
 }

@@ -26,14 +26,14 @@ if (report.hasAny({
 
 | Signal | Android | iOS | How |
 | --- | --- | --- | --- |
-| `vpn` | yes | yes | VPN transport, `tun`/`ppp`/`wg`/`ipsec` interfaces |
+| `vpn` | yes | yes | VPN transport, `tun`/`ppp`/`tap`/`wg` interfaces (iOS: scoped `tap`/`tun`/`ppp` only; utun-based VPNs are not distinguishable from system tunnels) |
 | `proxy` | yes | yes | Per-network proxy, PAC file, JVM proxy properties |
-| `mockLocation` | yes | iOS 15+ | `Location.isMock`, known mock apps, apps holding `ACCESS_MOCK_LOCATION`; iOS `isSimulatedBySoftware` |
+| `mockLocation` | yes | iOS 15+ | `Location.isMock` (needs granted location permission), known mock apps; iOS `isSimulatedBySoftware` |
 | `virtualCamera` | partial | iOS 17+ | Known virtual-camera apps, external cameras |
 | `developerOptions` | yes | no | `DEVELOPMENT_SETTINGS_ENABLED` |
 | `adb` | yes | no | USB and wireless debugging |
 | `clockTampering` | yes | needs `trustedTime` | Auto time/zone off, skew against server time |
-| `untrustedInstaller` | yes | no | Installer not in `trustedInstallers` (skipped for debug builds) |
+| `untrustedInstaller` | yes | no | Installer not in `trustedInstallers` (Play, Galaxy Store, AppGallery, Amazon, GetApps by default). Builds installed with adb report no installer, including debug builds |
 | `signatureMismatch` | yes | no | Signing cert SHA-256 vs `expectedSignatureSha256` |
 | `accessibilityAbuse` | yes | no | Non-system services that can read window content |
 | `remoteControlApp` | yes | no | AnyDesk, TeamViewer, RustDesk, ... installed |
