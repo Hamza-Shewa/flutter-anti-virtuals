@@ -370,6 +370,17 @@ internal class HookRulesTest {
     }
 }
 
+internal class HiddenPathsTest {
+    @Test
+    fun aPathOnlyTheKernelFindsIsReportedAsHidden() {
+        assertEquals(
+            listOf("file API hides /system/bin/su"),
+            HookRules.details(HookEvidence(hiddenPaths = setOf("/system/bin/su")))
+        )
+        assertTrue(HookRules.details(HookEvidence()).isEmpty())
+    }
+}
+
 internal class DebuggerRulesTest {
     private val status = "Name:\tapp\nTracerPid:\t0\nUid:\t10234\n"
 
