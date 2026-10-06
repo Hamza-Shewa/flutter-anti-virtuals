@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.location.Location
@@ -17,6 +19,7 @@ import android.os.Build
 import android.os.Process
 import android.os.SystemClock
 import android.provider.Settings
+import android.telephony.TelephonyManager
 import android.view.accessibility.AccessibilityManager
 import java.io.File
 import java.net.NetworkInterface
@@ -63,7 +66,8 @@ internal class AntiVirtualScanner(private val context: Context) {
             "remoteControlApp" to ::remoteControlApp,
             "clonedApp" to ::clonedApp,
             "userCertificates" to ::userCertificates,
-            "sideloaded" to { Detection.unsupported }
+            "sideloaded" to { Detection.unsupported },
+            "emulator" to ::emulator
         )
         return checks
             .filterKeys { config.signals == null || it in config.signals }
@@ -271,6 +275,53 @@ internal class AntiVirtualScanner(private val context: Context) {
 
     private fun remoteControlApp(): Detection =
         Detection.of(installed(KnownPackages.remoteControl).map { "remote control app $it" })
+
+    // ---- emulator ---------------------------------------------------------
+
+    private fun emulator(): Detection {
+        val sensors = try {
+            (context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager)
+                ?.getSensorList(Sensor.TYPE_ALL)?.map { it.name }
+        } catch (_: Throwable) { null }
+        val operator = try {
+            (context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager)?.networkOperatorName
+        } catch (_: Throwable) { null }
+        val evidence = EmulatorEvidence(
+            fingerprint = Build.FINGERPRINT.orEmpty(),
+            model = Build.MODEL.orEmpty(),
+            manufacturer = Build.MANUFACTURER.orEmpty(),
+            brand = Build.BRAND.orEmpty(),
+            device = Build.DEVICE.orEmpty(),
+            product = Build.PRODUCT.orEmpty(),
+            hardware = Build.HARDWARE.orEmpty(),
+            board = Build.BOARD.orEmpty(),
+            properties = systemProperties(EmulatorRules.PROPERTIES),
+            existingFiles = EmulatorRules.FILES.keys.filter { path ->
+                try { File(path).exists() } catch (_: Throwable) { false }
+            }.toSet(),
+            installedPackages = installed(KnownPackages.emulator).toSet(),
+            sensorNames = sensors,
+            networkOperatorName = operator
+        )
+        return Detection.of(EmulatorRules.details(evidence))
+    }
+
+    /** Reads system properties through the hidden `SystemProperties`, falling back to `getprop`. */
+    private fun systemProperties(keys: List<String>): Map<String, String> {
+        val viaReflection = try {
+            val get = Class.forName("android.os.SystemProperties").getMethod("get", String::class.java)
+            keys.associateWith { (get.invoke(null, it) as? String).orEmpty() }
+        } catch (_: Throwable) { null }
+        if (viaReflection != null) return viaReflection.filterValues { it.isNotEmpty() }
+        return try {
+            val out = Runtime.getRuntime().exec(arrayOf("getprop")).inputStream.bufferedReader().use { it.readText() }
+            val line = Regex("""^\[([^\]]+)\]: \[(.*)\]$""")
+            out.lineSequence().mapNotNull { line.find(it.trim()) }
+                .map { it.groupValues[1] to it.groupValues[2] }
+                .filter { (k, v) -> k in keys && v.isNotEmpty() }
+                .toMap()
+        } catch (_: Throwable) { emptyMap() }
+    }
 
     // ---- helpers ----------------------------------------------------------
 

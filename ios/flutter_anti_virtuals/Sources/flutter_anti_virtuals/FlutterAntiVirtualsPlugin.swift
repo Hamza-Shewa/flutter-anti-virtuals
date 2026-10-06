@@ -106,7 +106,7 @@ final class AntiVirtualScanner {
   private static let allSignals = [
     "vpn", "proxy", "mockLocation", "virtualCamera", "developerOptions", "adb",
     "clockTampering", "untrustedInstaller", "signatureMismatch", "accessibilityAbuse",
-    "remoteControlApp", "clonedApp", "userCertificates", "sideloaded",
+    "remoteControlApp", "clonedApp", "userCertificates", "sideloaded", "emulator",
   ]
 
   func scan(wanted: Set<String>?, maxSkewMs: Int64, trustedMs: Int64?) -> [String: Any] {
@@ -120,6 +120,7 @@ final class AntiVirtualScanner {
       case "clockTampering":
         out[signal] = clock(maxSkewMs: maxSkewMs, trustedMs: trustedMs).map
       case "sideloaded": out[signal] = sideloaded().map
+      case "emulator": out[signal] = emulator().map
       default: out[signal] = Detection.unsupported.map  // Android-only concepts.
       }
     }
@@ -198,6 +199,34 @@ final class AntiVirtualScanner {
     let deviceMs = Int64(Date().timeIntervalSince1970 * 1000)
     let skew = abs(deviceMs - trustedMs)
     return skew > maxSkewMs ? .of(["clock differs from trusted time by \(skew)ms"]) : .of([])
+  }
+
+  private func emulator() -> Detection {
+    var details: [String] = []
+    #if targetEnvironment(simulator)
+      details.append("built for the iOS Simulator")
+    #endif
+    // Set by the Simulator runtime; a device build launched there would still carry them.
+    let env = ProcessInfo.processInfo.environment
+    for key in ["SIMULATOR_DEVICE_NAME", "SIMULATOR_MODEL_IDENTIFIER", "SIMULATOR_UDID"]
+    where env[key] != nil {
+      details.append("environment \(key)")
+    }
+    // Devices report a model such as "iPhone15,2"; the Simulator reports the host CPU.
+    // iPad apps running on Apple silicon Macs are excluded: they are not simulated.
+    var isAppOnMac = false
+    if #available(iOS 14.0, *) { isAppOnMac = ProcessInfo.processInfo.isiOSAppOnMac }
+    if !isAppOnMac {
+      var info = utsname()
+      uname(&info)
+      let machine = withUnsafeBytes(of: &info.machine) { raw in
+        String(decoding: raw.prefix(while: { $0 != 0 }), as: UTF8.self)
+      }
+      if ["x86_64", "i386", "arm64"].contains(machine) {
+        details.append("simulator hardware \(machine)")
+      }
+    }
+    return .of(details)
   }
 
   private func sideloaded() -> Detection {

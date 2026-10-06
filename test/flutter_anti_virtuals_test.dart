@@ -247,6 +247,15 @@ void main() {
         ScanOptions(expectedSignatureSha256: ['aa']),
       );
       expect(ScanOptions(checkVpn: false), isNot(ScanOptions()));
+      expect(ScanOptions(checkEmulator: false), isNot(ScanOptions()));
+      expect(
+        ScanOptions(checkEmulator: false).enabledSignals,
+        isNot(contains(AntiVirtualSignal.emulator)),
+      );
+      expect(
+        ScanOptions().onlyChecking(AntiVirtualSignal.emulator).toMap()['signals'],
+        ['emulator'],
+      );
       expect(
         ScanOptions(maxClockSkew: const Duration(seconds: 1)),
         isNot(ScanOptions()),

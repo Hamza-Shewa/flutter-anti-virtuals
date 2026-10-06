@@ -17,6 +17,7 @@ class ScanOptions {
     this.checkProxy = true,
     this.checkMockLocation = true,
     this.checkVirtualCamera = true,
+    this.checkEmulator = true,
     this.checkDeveloperOptions = true,
     this.checkAdb = true,
     this.checkClockTampering = true,
@@ -65,6 +66,10 @@ class ScanOptions {
 
   /// Virtual/external cameras and known virtual-camera apps.
   final bool checkVirtualCamera;
+
+  /// Android emulator (Android Studio, Genymotion, BlueStacks, Nox, LDPlayer,
+  /// MEmu, ...) or the iOS Simulator.
+  final bool checkEmulator;
 
   /// Android developer options enabled.
   final bool checkDeveloperOptions;
@@ -129,6 +134,7 @@ class ScanOptions {
           other.checkProxy == checkProxy &&
           other.checkMockLocation == checkMockLocation &&
           other.checkVirtualCamera == checkVirtualCamera &&
+          other.checkEmulator == checkEmulator &&
           other.checkDeveloperOptions == checkDeveloperOptions &&
           other.checkAdb == checkAdb &&
           other.checkClockTampering == checkClockTampering &&
@@ -154,6 +160,7 @@ class ScanOptions {
     checkProxy,
     checkMockLocation,
     checkVirtualCamera,
+    checkEmulator,
     checkDeveloperOptions,
     checkAdb,
     checkClockTampering,
@@ -177,6 +184,7 @@ class ScanOptions {
     if (checkProxy) AntiVirtualSignal.proxy,
     if (checkMockLocation) AntiVirtualSignal.mockLocation,
     if (checkVirtualCamera) AntiVirtualSignal.virtualCamera,
+    if (checkEmulator) AntiVirtualSignal.emulator,
     if (checkDeveloperOptions) AntiVirtualSignal.developerOptions,
     if (checkAdb) AntiVirtualSignal.adb,
     if (checkClockTampering) AntiVirtualSignal.clockTampering,
@@ -196,6 +204,7 @@ class ScanOptions {
     checkProxy: signal == AntiVirtualSignal.proxy,
     checkMockLocation: signal == AntiVirtualSignal.mockLocation,
     checkVirtualCamera: signal == AntiVirtualSignal.virtualCamera,
+    checkEmulator: signal == AntiVirtualSignal.emulator,
     checkDeveloperOptions: signal == AntiVirtualSignal.developerOptions,
     checkAdb: signal == AntiVirtualSignal.adb,
     checkClockTampering: signal == AntiVirtualSignal.clockTampering,

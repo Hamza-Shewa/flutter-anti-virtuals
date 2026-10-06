@@ -1037,5 +1037,16 @@ void main() {
       expect(AntiVirtualMessages.arabic.textDirection, TextDirection.rtl);
       expect(AntiVirtualMessages.english.textDirection, TextDirection.ltr);
     });
+
+    test('every shipped language has a message for every signal', () {
+      for (final messages in [
+        AntiVirtualMessages.english,
+        AntiVirtualMessages.arabic,
+        AntiVirtualMessages.french,
+        AntiVirtualMessages.spanish,
+      ]) {
+        expect(messages.signals.keys, unorderedEquals(AntiVirtualSignal.values));
+      }
+    });
   });
 }

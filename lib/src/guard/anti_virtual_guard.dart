@@ -75,7 +75,9 @@ class AntiVirtualGuard extends StatefulWidget {
   /// Signals that block the app unless [blockOn] says otherwise. These are the
   /// clear integrity violations; softer signals such as developer options or
   /// an untrusted installer (which also fires for adb installs) are reported
-  /// through [onReport] but do not block by default.
+  /// through [onReport] but do not block by default. So is
+  /// [AntiVirtualSignal.emulator], which would block your own emulator during
+  /// development; add it in release builds (`if (kReleaseMode)`).
   static const Set<AntiVirtualSignal> defaultBlockingSignals =
       <AntiVirtualSignal>{
         AntiVirtualSignal.vpn,
