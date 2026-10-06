@@ -253,8 +253,20 @@ void main() {
         isNot(contains(AntiVirtualSignal.emulator)),
       );
       expect(
-        ScanOptions().onlyChecking(AntiVirtualSignal.emulator).toMap()['signals'],
+        ScanOptions()
+            .onlyChecking(AntiVirtualSignal.emulator)
+            .toMap()['signals'],
         ['emulator'],
+      );
+      expect(ScanOptions(checkRooted: false), isNot(ScanOptions()));
+      expect(ScanOptions().enabledSignals, contains(AntiVirtualSignal.rooted));
+      expect(
+        ScanOptions(checkRooted: false).enabledSignals,
+        isNot(contains(AntiVirtualSignal.rooted)),
+      );
+      expect(
+        ScanOptions().onlyChecking(AntiVirtualSignal.rooted).toMap()['signals'],
+        ['rooted'],
       );
       expect(
         ScanOptions(maxClockSkew: const Duration(seconds: 1)),

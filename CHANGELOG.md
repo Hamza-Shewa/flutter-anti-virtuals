@@ -6,6 +6,16 @@
 
 ## Unreleased
 
+* New `rooted` signal (`ScanOptions.checkRooted`, on by default) for Android
+  root and iOS jailbreak. Android: one strong indicator (`su`/Magisk binaries
+  in `PATH` and the usual directories, root manager and root-hiding apps, root
+  tool files, a writable `/system`, `/vendor` or `/product`, `adbd` as root,
+  `ro.secure=0`, permissive SELinux, Magisk/KernelSU/APatch mounts) or two weak
+  ones (a debug build of the system plus an unlocked bootloader). iOS: Cydia,
+  Sileo, Zebra and other jailbreak files (including rootless `/var/jb`),
+  writing outside the sandbox, injected tweak libraries and
+  `DYLD_INSERT_LIBRARIES`. Localized for the guard's default screen; not in
+  `defaultBlockingSignals`.
 * New `emulator` signal (`ScanOptions.checkEmulator`, on by default): Android
   emulators (Android Studio, Genymotion, BlueStacks, Nox, LDPlayer, MEmu, ...)
   from qemu properties, emulator hardware, files, apps and sensors, needing

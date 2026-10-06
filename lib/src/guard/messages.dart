@@ -71,8 +71,8 @@ class AntiVirtualMessages {
       AntiVirtualSignal.mockLocation: 'Fake GPS or a mock-location app was detected. Turn it off to continue.',
       AntiVirtualSignal.virtualCamera:
           'A virtual or external camera was detected. Disable it to continue.',
-      AntiVirtualSignal.emulator:
-          'This app is running on an emulator or simulator. Use a real device to continue.',
+      AntiVirtualSignal.emulator: 'This app is running on an emulator or simulator. Use a real device to continue.',
+      AntiVirtualSignal.rooted: 'This device is rooted or jailbroken. Use an unmodified device to continue.',
       AntiVirtualSignal.developerOptions: 'Developer options are turned on.',
       AntiVirtualSignal.adb: 'USB or wireless debugging is turned on.',
       AntiVirtualSignal.clockTampering: 'The device date, time or time zone looks incorrect. Enable automatic date & time.',
@@ -106,6 +106,7 @@ class AntiVirtualMessages {
           'تم اكتشاف كاميرا افتراضية أو خارجية. عطّلها للمتابعة.',
       AntiVirtualSignal.emulator:
           'التطبيق يعمل على محاكي. استخدم جهازًا حقيقيًا للمتابعة.',
+      AntiVirtualSignal.rooted: 'تم اكتشاف روت أو جلبريك على هذا الجهاز. استخدم جهازًا غير معدَّل للمتابعة.',
       AntiVirtualSignal.developerOptions: 'خيارات المطوّر مفعّلة.',
       AntiVirtualSignal.adb: 'تصحيح أخطاء USB أو اللاسلكي مفعّل.',
       AntiVirtualSignal.clockTampering: 'تاريخ الجهاز أو وقته أو منطقته الزمنية غير صحيحة. فعّل التاريخ والوقت التلقائيين.',
@@ -136,8 +137,8 @@ class AntiVirtualMessages {
           'Un proxy réseau est configuré. Supprimez-le pour continuer.',
       AntiVirtualSignal.mockLocation: 'Une fausse position GPS ou une application de simulation a été détectée. Désactivez-la pour continuer.',
       AntiVirtualSignal.virtualCamera: 'Une caméra virtuelle ou externe a été détectée. Désactivez-la pour continuer.',
-      AntiVirtualSignal.emulator:
-          "L'application s'exécute sur un émulateur ou un simulateur. Utilisez un appareil réel pour continuer.",
+      AntiVirtualSignal.emulator: "L'application s'exécute sur un émulateur ou un simulateur. Utilisez un appareil réel pour continuer.",
+      AntiVirtualSignal.rooted: "Cet appareil est rooté ou jailbreaké. Utilisez un appareil non modifié pour continuer.",
       AntiVirtualSignal.developerOptions:
           'Les options pour les développeurs sont activées.',
       AntiVirtualSignal.adb: 'Le débogage USB ou sans fil est activé.',
@@ -166,8 +167,8 @@ class AntiVirtualMessages {
           'Hay un proxy de red configurado. Elimínalo para continuar.',
       AntiVirtualSignal.mockLocation: 'Se detectó una ubicación GPS falsa o una aplicación de simulación. Desactívala para continuar.',
       AntiVirtualSignal.virtualCamera: 'Se detectó una cámara virtual o externa. Desactívala para continuar.',
-      AntiVirtualSignal.emulator:
-          'La aplicación se ejecuta en un emulador o simulador. Usa un dispositivo real para continuar.',
+      AntiVirtualSignal.emulator: 'La aplicación se ejecuta en un emulador o simulador. Usa un dispositivo real para continuar.',
+      AntiVirtualSignal.rooted: 'Este dispositivo tiene root o jailbreak. Usa un dispositivo sin modificar para continuar.',
       AntiVirtualSignal.developerOptions:
           'Las opciones de desarrollador están activadas.',
       AntiVirtualSignal.adb: 'La depuración USB o inalámbrica está activada.',

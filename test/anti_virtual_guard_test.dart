@@ -766,6 +766,39 @@ void main() {
       expect(find.byKey(appKey, skipOffstage: false), findsOneWidget);
     });
 
+    group('rooted', () {
+      testWidgets('is reported but does not block by default', (tester) async {
+        platform.detected = {AntiVirtualSignal.rooted};
+        AntiVirtualReport? seen;
+        await tester.pumpWidget(
+          app(AntiVirtualGuard(onReport: (r) => seen = r, child: appChild)),
+        );
+        await tester.pump();
+        expect(seen!.isDetected(AntiVirtualSignal.rooted), isTrue);
+        expect(find.byKey(appKey), findsOneWidget);
+      });
+
+      testWidgets('blocks with its own message when asked to', (tester) async {
+        platform.detected = {AntiVirtualSignal.rooted};
+        await tester.pumpWidget(
+          app(
+            const AntiVirtualGuard(
+              blockOn: {AntiVirtualSignal.rooted},
+              child: appChild,
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(find.byKey(appKey, skipOffstage: false), findsNothing);
+        expect(
+          find.text(
+            AntiVirtualMessages.english.signals[AntiVirtualSignal.rooted]!,
+          ),
+          findsOneWidget,
+        );
+      });
+    });
+
     group('live monitoring', () {
       Future<void> settle(WidgetTester tester) =>
           tester.pump(const Duration(milliseconds: 600));
@@ -1045,7 +1078,10 @@ void main() {
         AntiVirtualMessages.french,
         AntiVirtualMessages.spanish,
       ]) {
-        expect(messages.signals.keys, unorderedEquals(AntiVirtualSignal.values));
+        expect(
+          messages.signals.keys,
+          unorderedEquals(AntiVirtualSignal.values),
+        );
       }
     });
   });
