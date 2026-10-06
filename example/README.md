@@ -1,17 +1,18 @@
-# flutter_anti_virtuals_example
+# flutter_anti_virtuals example
 
-Demonstrates how to use the flutter_anti_virtuals plugin.
+Three small apps in `lib/`. Each runs on its own:
 
-## Getting Started
+| File | Shows | Run |
+| --- | --- | --- |
+| `main.dart` | Everything on one screen: every signal, live changes, the guard, screen protection and `verify()` with Play Integrity / App Attest | `flutter run` |
+| `scan_example.dart` | **Usage 1**, calling `scan()` yourself: a full scan, only the checks you need, one signal with `check()`, and a decision before a sensitive action | `flutter run -t lib/scan_example.dart` |
+| `guard_example.dart` | **Usage 2**, the `AntiVirtualGuard` wrapper: around the whole app, around one screen, a custom blocking screen, release-only blocking and `onReport` | `flutter run -t lib/guard_example.dart` |
 
-This project is a starting point for a Flutter application.
+Run them on a device or an emulator. An emulator reports `emulator` (and
+usually `untrustedInstaller` and `adb`); switch a VPN or a proxy on to watch the
+guard react.
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+`verify()` needs a nonce from your own server in a real app. The example makes
+one up so it runs without a backend; see
+[`doc/server-verification.md`](../doc/server-verification.md) for what the
+server checks.
