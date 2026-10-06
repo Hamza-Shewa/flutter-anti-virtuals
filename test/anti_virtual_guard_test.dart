@@ -13,6 +13,16 @@ class _FakePlatform extends FlutterAntiVirtualsPlatform
   Object? error;
   int scans = 0;
   Completer<void>? gate;
+  final protections = <ScreenProtectionOptions?>[];
+  Object? protectionError;
+
+  @override
+  Future<bool> setScreenProtection(ScreenProtectionOptions? options) async {
+    protections.add(options);
+    if (protectionError != null) throw protectionError!;
+    return true;
+  }
+
   int listens = 0;
   late final changes = StreamController<void>.broadcast(
     sync: true,
@@ -764,6 +774,105 @@ void main() {
       await tester.pump();
       expect(find.byKey(appKey), findsNothing);
       expect(find.byKey(appKey, skipOffstage: false), findsOneWidget);
+    });
+
+    group('screen protection', () {
+      testWidgets('is applied while mounted and removed afterwards', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          app(
+            const AntiVirtualGuard(
+              protectScreen: ScreenProtectionOptions(),
+              child: appChild,
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(platform.protections, [const ScreenProtectionOptions()]);
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump();
+        expect(platform.protections.last, isNull);
+      });
+
+      testWidgets('is off by default', (tester) async {
+        await tester.pumpWidget(app(const AntiVirtualGuard(child: appChild)));
+        await tester.pump();
+        await tester.pumpWidget(const SizedBox());
+        expect(platform.protections, isEmpty);
+      });
+
+      testWidgets('follows changes of the options', (tester) async {
+        Widget build(ScreenProtectionOptions? options) =>
+            app(AntiVirtualGuard(protectScreen: options, child: appChild));
+        await tester.pumpWidget(build(null));
+        await tester.pumpWidget(build(const ScreenProtectionOptions()));
+        await tester.pumpWidget(
+          build(const ScreenProtectionOptions(secureWindow: false)),
+        );
+        await tester.pumpWidget(build(null));
+        await tester.pump();
+        expect(platform.protections, [
+          const ScreenProtectionOptions(),
+          const ScreenProtectionOptions(secureWindow: false),
+          null,
+        ]);
+      });
+
+      testWidgets('a failure is reported, a missing plugin is not', (
+        tester,
+      ) async {
+        final errors = <Object>[];
+        Widget build() => app(
+          AntiVirtualGuard(
+            protectScreen: const ScreenProtectionOptions(),
+            onError: (error, _) => errors.add(error),
+            child: appChild,
+          ),
+        );
+        platform.protectionError = MissingPluginException();
+        await tester.pumpWidget(build());
+        await tester.pump();
+        expect(errors, isEmpty);
+        await tester.pumpWidget(const SizedBox());
+        platform.protectionError = PlatformException(code: 'no_activity');
+        await tester.pumpWidget(build());
+        await tester.pump();
+        expect(errors.single, isA<PlatformException>());
+        expect(find.byKey(appKey), findsOneWidget);
+      });
+
+      testWidgets('screenCapture blocks when asked to', (tester) async {
+        platform.detected = {AntiVirtualSignal.screenCapture};
+        await tester.pumpWidget(
+          app(
+            const AntiVirtualGuard(
+              blockOn: {AntiVirtualSignal.screenCapture},
+              child: appChild,
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(find.byKey(appKey, skipOffstage: false), findsNothing);
+        expect(
+          find.text(
+            AntiVirtualMessages.english.signals[AntiVirtualSignal
+                .screenCapture]!,
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('a capture event rescans like a network change', (
+        tester,
+      ) async {
+        await tester.pumpWidget(app(const AntiVirtualGuard(child: appChild)));
+        await tester.pump();
+        platform.detected = {AntiVirtualSignal.screenCapture};
+        platform.changes.add(null);
+        await tester.pump(const Duration(milliseconds: 600));
+        expect(platform.scans, 2);
+      });
     });
 
     group('rooted', () {

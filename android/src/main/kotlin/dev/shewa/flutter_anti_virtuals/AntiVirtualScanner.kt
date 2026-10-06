@@ -11,6 +11,7 @@ import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.hardware.display.DisplayManager
 import android.location.Location
 import android.location.LocationManager
 import android.net.ConnectivityManager
@@ -71,7 +72,8 @@ internal class AntiVirtualScanner(private val context: Context) {
             "emulator" to ::emulator,
             "rooted" to ::rooted,
             "hooked" to ::hooked,
-            "debugger" to ::debugger
+            "debugger" to ::debugger,
+            "screenCapture" to ::screenCapture
         )
         return checks
             .filterKeys { config.signals == null || it in config.signals }
@@ -331,6 +333,16 @@ internal class AntiVirtualScanner(private val context: Context) {
     }
 
     private fun exists(path: String): Boolean = try { File(path).exists() } catch (_: Throwable) { false }
+
+    // ---- screen capture ---------------------------------------------------
+
+    private fun screenCapture(): Detection {
+        val displays = try {
+            (context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager)
+                ?.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)?.map { it.name }.orEmpty()
+        } catch (_: Throwable) { emptyList() }
+        return Detection.of(CaptureRules.details(displays, ScreenCaptureState.recording))
+    }
 
     // ---- hooks and debugger ----------------------------------------------
 

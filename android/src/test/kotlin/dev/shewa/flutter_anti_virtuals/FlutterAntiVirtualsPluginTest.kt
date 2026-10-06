@@ -396,3 +396,31 @@ internal class DebuggerRulesTest {
         assertTrue(DebuggerRules.details(false, false, "TracerPid:\tx\n").isEmpty())
     }
 }
+
+internal class CaptureRulesTest {
+    @Test
+    fun nothingConnectedIsClean() {
+        assertTrue(CaptureRules.details(emptyList(), null).isEmpty())
+        assertTrue(CaptureRules.details(emptyList(), false).isEmpty())
+    }
+
+    @Test
+    fun externalDisplaysAndRecordingAreReported() {
+        assertEquals(
+            listOf("external display HDMI Screen", "external display Wi-Fi Display"),
+            CaptureRules.details(listOf("Wi-Fi Display", "HDMI Screen"), null)
+        )
+        assertEquals(listOf("screen is being recorded"), CaptureRules.details(emptyList(), true))
+    }
+
+    @Test
+    fun protectionConfigReadsTheChannelArguments() {
+        assertEquals(ScreenProtectionConfig(), ScreenProtectionConfig.from(null))
+        assertEquals(
+            ScreenProtectionConfig(secureWindow = true, filterObscuredTouches = false, hideOverlayWindows = true),
+            ScreenProtectionConfig.from(
+                mapOf("secureWindow" to true, "filterObscuredTouches" to false, "hideOverlayWindows" to true)
+            )
+        )
+    }
+}

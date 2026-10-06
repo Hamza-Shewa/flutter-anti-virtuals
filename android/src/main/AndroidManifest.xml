@@ -2,6 +2,10 @@
   package="dev.shewa.flutter_anti_virtuals">
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Screen protection: hide other apps' overlay windows (Android 12+) and detect screen
+         recording (Android 15+). Both are normal permissions, granted at install. -->
+    <uses-permission android:name="android.permission.HIDE_OVERLAY_WINDOWS" />
+    <uses-permission android:name="android.permission.DETECT_SCREEN_RECORDING" />
 
     <!-- Package visibility (Android 11+) for the installed-app checks. -->
     <queries>
