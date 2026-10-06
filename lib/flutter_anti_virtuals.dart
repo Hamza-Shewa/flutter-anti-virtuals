@@ -17,15 +17,15 @@ class FlutterAntiVirtuals {
   /// natively is reported as unsupported (not as clean). Channel errors such as
   /// `PlatformException` or `MissingPluginException` propagate; treat them as a
   /// failed scan rather than a clean device.
-  Future<AntiVirtualReport> scan([ScanOptions options = const ScanOptions()]) =>
-      FlutterAntiVirtualsPlatform.instance.scan(options);
+  Future<AntiVirtualReport> scan([ScanOptions? options]) =>
+      FlutterAntiVirtualsPlatform.instance.scan(options ?? ScanOptions());
 
   /// Convenience for a single check.
   Future<SignalResult> check(
     AntiVirtualSignal signal, [
-    ScanOptions options = const ScanOptions(),
+    ScanOptions? options,
   ]) async {
-    final report = await scan(options.copyWith(signals: {signal}));
+    final report = await scan((options ?? ScanOptions()).onlyChecking(signal));
     return report[signal] ?? const SignalResult.unsupported();
   }
 }
