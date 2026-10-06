@@ -24,6 +24,42 @@ if (report.hasAny({
 }
 ```
 
+## Block the app at startup
+
+`AntiVirtualGuard` runs a scan when the app starts (and again every time it
+returns to the foreground) and covers your app with a blocking screen while a
+blocking signal is detected. Put it in `MaterialApp.builder` so the default
+screen follows the app's locale:
+
+```dart
+MaterialApp(
+  builder: (context, child) => AntiVirtualGuard(
+    options: ScanOptions(expectedSignatureSha256: ['<release cert sha256>']),
+    child: child!,
+  ),
+  home: const HomePage(),
+)
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `blockOn` | `vpn`, `proxy`, `mockLocation`, `virtualCamera`, `signatureMismatch` | Detections that block. Others (developer options, installer, ...) only reach `onReport` |
+| `blockedBuilder` | built-in screen | `(context, matches)` where `matches` is e.g. `[vpn, mockLocation]`, so you can write your own text |
+| `messages` / `locale` | device or app locale | Text of the built-in screen. Ships English, Arabic (RTL), French and Spanish, falling back to English; `AntiVirtualMessages.english.copyWith(...)` overrides single strings |
+| `forceExit` | `false` | Close the app after `forceExitAfter` |
+| `forceExitAfter` | 5 seconds | Delay before the app exits. The built-in screen shows a countdown |
+| `waitForScan` / `loadingBuilder` | `true` | Hide the app until the first scan finishes |
+| `rescanOnResume` | `true` | Scan again when the app comes back to the foreground; if the problem is gone the app is shown again and the exit is cancelled |
+| `onReport`, `onError` | none | Every completed scan; scan failures. A failing scan lets the app through (fail open) |
+
+The wrapped app stays mounted (its state is kept) but is hidden and not
+interactive while blocked.
+
+**Force exit on iOS:** Apple's App Review Guidelines discourage apps from
+quitting themselves, so `forceExit` can get an app rejected from the App
+Store. It is off by default. On Android it calls `SystemNavigator.pop()`, on
+iOS `exit(0)`.
+
 ## Choosing checks
 
 `ScanOptions` has one boolean per signal (`checkVpn`, `checkProxy`,

@@ -3,6 +3,8 @@ import 'src/report.dart';
 import 'src/scan_options.dart';
 import 'src/signal.dart';
 
+export 'src/guard/anti_virtual_guard.dart';
+export 'src/guard/messages.dart';
 export 'src/report.dart';
 export 'src/scan_options.dart';
 export 'src/signal.dart';

@@ -28,6 +28,12 @@ class _ExampleAppState extends State<ExampleApp> {
   Widget build(BuildContext context) {
     final report = _report;
     return MaterialApp(
+      // Blocks the whole app while VPN, proxy, mock location, a virtual camera
+      // or a tampered signature is detected.
+      builder: (context, child) => AntiVirtualGuard(
+        forceExit: false, // set true to close the app after forceExitAfter (5s)
+        child: child!,
+      ),
       home: Scaffold(
         appBar: AppBar(title: const Text('Anti virtuals')),
         floatingActionButton: FloatingActionButton(

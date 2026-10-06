@@ -10,3 +10,6 @@
   instead of a `signals` set, and asserts that configured checks receive their
   configuration (`expectedSignatureSha256`, `trustedInstallers`).
 * `ScanOptions` is no longer `const`; `copyWith` was replaced by `onlyChecking`.
+* Added `AntiVirtualGuard`: scans at startup and on resume, blocks the app
+  with a localized default screen (en, ar, fr, es) or a custom builder, and can
+  force-exit after a configurable delay (default 5 seconds, off by default).
