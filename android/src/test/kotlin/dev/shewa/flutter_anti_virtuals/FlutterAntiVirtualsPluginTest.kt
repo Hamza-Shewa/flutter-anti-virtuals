@@ -5,6 +5,28 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+internal class NetworkSignatureTest {
+    private val wifi = NetworkState("100", vpn = false, proxy = null)
+    private val vpn = NetworkState("101", vpn = true, proxy = null)
+
+    @Test
+    fun orderDoesNotMatter() {
+        assertEquals(
+            NetworkSignature.of(listOf(wifi, vpn), null),
+            NetworkSignature.of(listOf(vpn, wifi), null),
+        )
+    }
+
+    @Test
+    fun aVpnOrProxyChangesTheSignature() {
+        val base = NetworkSignature.of(listOf(wifi), null)
+        assertFalse(base == NetworkSignature.of(listOf(wifi, vpn), null))
+        assertFalse(base == NetworkSignature.of(listOf(wifi.copy(proxy = "10.0.0.1:8080")), null))
+        assertFalse(base == NetworkSignature.of(listOf(wifi), "10.0.0.1:8080"))
+        assertFalse(base == NetworkSignature.of(emptyList(), null))
+    }
+}
+
 internal class RulesTest {
     @Test
     fun clockFlagsAutoTimeOffAndSkew() {

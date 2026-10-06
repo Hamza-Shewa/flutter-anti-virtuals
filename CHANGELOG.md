@@ -23,3 +23,15 @@
   `textDirection`; the screen follows device locale changes.
 * Guard: `unmountWhileBlocked` is `true` by default, so a blocked app cannot be
   reached with the back button; pass `false` to keep it mounted and keep state.
+* Live detection: `FlutterAntiVirtuals.environmentChanges` emits when a VPN or
+  proxy may have been switched on or off (Android `ConnectivityManager`
+  callbacks, iOS `NWPathMonitor`), and `AntiVirtualGuard` rescans on it
+  (`liveMonitoring`, `liveDebounce`).
+* Live detection review fixes: `environmentChanges` is one shared stream (a
+  second listener no longer breaks the first), a missing native side is quiet,
+  a change in the background is scanned on resume even without
+  `rescanOnResume`, bursts are capped at `liveDebounce` x 4, watcher failures
+  are labelled as such and retried, Android keeps network state from the
+  callback arguments instead of querying on every update, iOS emits on every
+  path update, ignores updates from a cancelled monitor and tears down on
+  engine detach.

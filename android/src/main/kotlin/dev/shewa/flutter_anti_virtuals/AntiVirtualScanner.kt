@@ -85,9 +85,7 @@ internal class AntiVirtualScanner(private val context: Context) {
             @Suppress("DEPRECATION")
             cm?.allNetworks?.forEach { network ->
                 val caps = cm.getNetworkCapabilities(network)
-                if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true ||
-                    caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == false
-                ) {
+                if (caps.isVpn()) {
                     details += "network transport VPN"
                 }
             }

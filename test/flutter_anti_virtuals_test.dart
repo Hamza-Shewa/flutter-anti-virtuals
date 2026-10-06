@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_anti_virtuals/flutter_anti_virtuals.dart';
 import 'package:flutter_anti_virtuals/flutter_anti_virtuals_method_channel.dart';
 import 'package:flutter_anti_virtuals/flutter_anti_virtuals_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+class _SilentPlatform extends FlutterAntiVirtualsPlatform {}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -29,6 +32,104 @@ void main() {
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
+  });
+
+  group('environmentChanges', () {
+    const events = EventChannel('flutter_anti_virtuals/changes');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    late MockStreamHandlerEventSink sink;
+    var listens = 0;
+    var cancels = 0;
+
+    setUp(() {
+      listens = 0;
+      cancels = 0;
+      messenger.setMockStreamHandler(
+        events,
+        MockStreamHandler.inline(
+          onListen: (arguments, s) {
+            listens++;
+            sink = s;
+          },
+          onCancel: (arguments) => cancels++,
+        ),
+      );
+    });
+
+    tearDown(() => messenger.setMockStreamHandler(events, null));
+
+    test('listeners share one native subscription', () async {
+      final platform = MethodChannelFlutterAntiVirtuals();
+      var a = 0;
+      var b = 0;
+      final first = platform.environmentChanges.listen((_) => a++);
+      final second = platform.environmentChanges.listen((_) => b++);
+      await Future<void>.delayed(Duration.zero);
+      expect(listens, 1);
+      sink.success('network');
+      await Future<void>.delayed(Duration.zero);
+      expect([a, b], [1, 1]);
+
+      await first.cancel();
+      await Future<void>.delayed(Duration.zero);
+      expect(cancels, 0); // the second listener still needs events
+      sink.success('network');
+      await Future<void>.delayed(Duration.zero);
+      expect([a, b], [1, 2]);
+
+      await second.cancel();
+      await Future<void>.delayed(Duration.zero);
+      expect(cancels, 1);
+    });
+
+    test('FlutterAntiVirtuals exposes the stream', () async {
+      final listener = FlutterAntiVirtuals.instance.environmentChanges.listen(
+        (_) {},
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(listens, 1);
+      await listener.cancel();
+    });
+
+    test('a missing native side is quiet and never emits', () async {
+      messenger.setMockStreamHandler(events, null);
+      final reported = <FlutterErrorDetails>[];
+      final previous = FlutterError.onError;
+      FlutterError.onError = reported.add;
+      addTearDown(() => FlutterError.onError = previous);
+      final platform = MethodChannelFlutterAntiVirtuals();
+      var emitted = 0;
+      final listener = platform.environmentChanges.listen((_) => emitted++);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await listener.cancel();
+      expect(reported, isEmpty);
+      expect(emitted, 0);
+    });
+
+    test('a native failure to start watching is a stream error', () async {
+      messenger.setMockStreamHandler(
+        events,
+        MockStreamHandler.inline(
+          onListen: (arguments, sink) =>
+              throw PlatformException(code: 'watch_failed'),
+        ),
+      );
+      final platform = MethodChannelFlutterAntiVirtuals();
+      final errors = <Object>[];
+      final listener = platform.environmentChanges.listen(
+        (_) {},
+        onError: errors.add,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await listener.cancel();
+      expect(errors.single, isA<PlatformException>());
+    });
+  });
+
+  test('platforms without live monitoring never emit', () async {
+    final platform = _SilentPlatform();
+    expect(await platform.environmentChanges.toList(), isEmpty);
   });
 
   test('method channel is the default instance', () {
