@@ -45,15 +45,18 @@ MaterialApp(
 | --- | --- | --- |
 | `blockOn` | `vpn`, `proxy`, `mockLocation`, `virtualCamera`, `signatureMismatch` | Detections that block. Others (developer options, installer, ...) only reach `onReport` |
 | `blockedBuilder` | built-in screen | `(context, matches)` where `matches` is e.g. `[vpn, mockLocation]`, so you can write your own text |
-| `messages` / `locale` | device or app locale | Text of the built-in screen. Ships English, Arabic (RTL), French and Spanish, falling back to English; `AntiVirtualMessages.english.copyWith(...)` overrides single strings |
-| `forceExit` | `false` | Close the app after `forceExitAfter` |
+| `messages` / `locale` | device language | Text of the built-in screen. Ships English, Arabic (RTL), French and Spanish, falling back to English; `AntiVirtualMessages.english.copyWith(...)` overrides single strings. Apps with their own language switch pass `locale: Localizations.localeOf(context)` |
+| `forceExit` | `false` | Close the app after `forceExitAfter`. The countdown pauses while the app is in the background and restarts on return if the problem is still there |
 | `forceExitAfter` | 5 seconds | Delay before the app exits. The built-in screen shows a countdown |
-| `waitForScan` / `loadingBuilder` | `true` | Hide the app until the first scan finishes |
-| `rescanOnResume` | `true` | Scan again when the app comes back to the foreground; if the problem is gone the app is shown again and the exit is cancelled |
+| `waitForScan` / `loadingBuilder` | `true` | The app is not built until the first scan is clean |
+| `rescanOnResume` | `true` | Scan again when the app returns from the background (not for notification shade or permission dialogs); if the problem is gone the app is shown again and the exit is cancelled |
 | `onReport`, `onError` | none | Every completed scan; scan failures. A failing scan lets the app through (fail open) |
 
-The wrapped app stays mounted (its state is kept) but is hidden and not
-interactive while blocked.
+The app is not built until the first scan is clean. Once built it stays
+mounted (its state is kept), but while blocked it is hidden, loses focus and
+has its animations paused. Code outside the widget tree (`main()`, network
+calls already started) is not stopped. Changing `options`, `blockOn` or
+`forceExit` later takes effect.
 
 **Force exit on iOS:** Apple's App Review Guidelines discourage apps from
 quitting themselves, so `forceExit` can get an app rejected from the App

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io' show Platform, exit;
 import 'dart:math' as math;
-import 'dart:ui' show Locale, PlatformDispatcher, TextDirection;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -34,8 +33,11 @@ typedef AntiVirtualBlockedBuilder = Widget Function(
 /// )
 /// ```
 ///
-/// The wrapped app stays mounted (its state is kept) but is hidden and cannot
-/// be interacted with while blocked. If the scan itself fails, [onError] is
+/// The wrapped app is not built until the first scan is clean (unless
+/// [waitForScan] is false). Once built it stays mounted so its state survives,
+/// but while blocked it is hidden, loses focus and has its animations paused.
+/// Code that runs outside the widget tree (`main()`, network calls the app
+/// already started) is not stopped. If a scan itself fails, [onError] is
 /// called and the app is let through (fail open).
 class AntiVirtualGuard extends StatefulWidget {
   const AntiVirtualGuard({
@@ -90,27 +92,35 @@ class AntiVirtualGuard extends StatefulWidget {
   /// immediately and block only if something is found.
   final bool waitForScan;
 
-  /// Overrides the default screen's text. Missing languages fall back to the
-  /// built-in English, Arabic, French and Spanish messages.
+  /// Overrides the default screen's text (and its layout direction, see
+  /// [AntiVirtualMessages.textDirection]).
   final AntiVirtualMessages? messages;
 
-  /// Language of the default screen. Defaults to the surrounding
-  /// `Localizations` locale, then the device locale.
+  /// Language of the default screen. Defaults to the device language, falling
+  /// back to English when it is not one of
+  /// [AntiVirtualMessages.supportedLanguages]. Apps with their own language
+  /// switch can pass `Localizations.localeOf(context)` from inside
+  /// `MaterialApp.builder`.
   final Locale? locale;
 
   /// Close the app [forceExitAfter] after it gets blocked. Off by default:
   /// Apple's App Review Guidelines discourage apps from quitting themselves,
-  /// so this carries App Store risk on iOS.
+  /// so this carries App Store risk on iOS. The countdown pauses while the app
+  /// is in the background (so users can go and fix the problem) and restarts
+  /// when they return and the rescan still finds it.
   final bool forceExit;
 
   /// How long the blocking screen stays before the app exits (when
   /// [forceExit] is on).
   final Duration forceExitAfter;
 
-  /// Scan again every time the app returns to the foreground.
+  /// Scan again when the app returns from the background. Brief interruptions
+  /// that never background the app (notification shade, permission dialogs)
+  /// do not trigger a scan, and a scan already running is not restarted.
   final bool rescanOnResume;
 
-  /// Called with every completed scan, blocking or not.
+  /// Called with every completed scan, blocking or not. Exceptions thrown here
+  /// are reported through `FlutterError.reportError` and never unblock.
   final ValueChanged<AntiVirtualReport>? onReport;
 
   /// Called when a scan throws (for example a missing plugin).
@@ -125,19 +135,42 @@ class AntiVirtualGuard extends StatefulWidget {
 
 class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     with WidgetsBindingObserver {
-  late final ScanOptions _options = widget.options ?? ScanOptions();
+  AntiVirtualReport? _report;
   bool _scanned = false;
+  // Sticky: once the app has been allowed into the tree it stays mounted.
+  bool _childAllowed = false;
+  bool _inFlight = false;
+  bool _rescanQueued = false;
+  bool _wasBackgrounded = false;
   List<AntiVirtualSignal> _matches = const <AntiVirtualSignal>[];
-  int _generation = 0;
   Timer? _exitTimer;
   Timer? _tickTimer;
   int _remaining = 0;
+
+  ScanOptions get _options => widget.options ?? _defaultOptions;
+  final ScanOptions _defaultOptions = ScanOptions();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _childAllowed = !widget.waitForScan;
     _scan();
+  }
+
+  @override
+  void didUpdateWidget(AntiVirtualGuard old) {
+    super.didUpdateWidget(old);
+    if (!identical(old.options, widget.options)) {
+      _scan();
+    } else if (old.blockOn != widget.blockOn) {
+      _apply(_report);
+    }
+    if (old.forceExit != widget.forceExit ||
+        old.forceExitAfter != widget.forceExitAfter) {
+      _cancelExit();
+      _syncExit();
+    }
   }
 
   @override
@@ -149,30 +182,94 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && widget.rescanOnResume) _scan();
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        // The user left (maybe to fix the problem in Settings): stop the
+        // countdown; it restarts if the rescan on return still finds a match.
+        _wasBackgrounded = true;
+        _cancelExit();
+      case AppLifecycleState.resumed:
+        if (_wasBackgrounded && widget.rescanOnResume) _scan();
+        _wasBackgrounded = false;
+      case AppLifecycleState.inactive:
+        break;
+    }
   }
 
   Future<void> _scan() async {
-    final id = ++_generation;
+    if (_inFlight) {
+      // Keep the running scan, but make sure its result is not stale.
+      _rescanQueued = true;
+      return;
+    }
+    _inFlight = true;
+    AntiVirtualReport? report;
+    Object? failure;
+    StackTrace? failureTrace;
     try {
-      final report = await FlutterAntiVirtualsPlatform.instance.scan(_options);
-      if (!mounted || id != _generation) return;
-      widget.onReport?.call(report);
-      setState(() {
-        _scanned = true;
-        _matches = <AntiVirtualSignal>[
-          for (final signal in AntiVirtualSignal.values)
-            if (widget.blockOn.contains(signal) && report.isDetected(signal))
-              signal,
-        ];
-      });
-      _syncExit();
+      report = await FlutterAntiVirtualsPlatform.instance.scan(_options);
     } catch (error, stackTrace) {
-      if (!mounted || id != _generation) return;
-      widget.onError?.call(error, stackTrace);
-      setState(() => _scanned = true);
+      failure = error;
+      failureTrace = stackTrace;
+    }
+    _inFlight = false;
+    if (!mounted) return;
+    if (_rescanQueued) {
+      _rescanQueued = false;
+      return _scan();
+    }
+    if (report == null) {
+      // Fail open, including dropping an earlier block and its countdown.
+      _guard(() => widget.onError?.call(failure!, failureTrace!));
+      _report = null;
+      _apply(null);
+      return;
+    }
+    _report = report;
+    _apply(report);
+    _guard(() => widget.onReport?.call(report!));
+  }
+
+  /// Recomputes what blocks from [report] (null = scan failed, nothing blocks).
+  void _apply(AntiVirtualReport? report) {
+    if (!mounted) return;
+    setState(() {
+      _scanned = true;
+      _matches = report == null
+          ? const <AntiVirtualSignal>[]
+          : <AntiVirtualSignal>[
+              for (final signal in AntiVirtualSignal.values)
+                if (widget.blockOn.contains(signal) &&
+                    report.isDetected(signal))
+                  signal,
+            ];
+      if (_matches.isEmpty || !widget.waitForScan) _childAllowed = true;
+    });
+    if (_matches.isNotEmpty) _dropFocus();
+    _syncExit();
+  }
+
+  // A callback that throws must not turn a blocked device into an open one.
+  void _guard(void Function() callback) {
+    try {
+      callback();
+    } catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'flutter_anti_virtuals',
+          context: ErrorDescription(
+            'while calling an AntiVirtualGuard callback',
+          ),
+        ),
+      );
     }
   }
+
+  void _dropFocus() => FocusManager.instance.primaryFocus?.unfocus();
 
   void _syncExit() {
     if (_matches.isEmpty || !widget.forceExit) {
@@ -209,31 +306,58 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     }
   }
 
+  Locale _resolveLocale() {
+    final explicit = widget.locale;
+    if (explicit != null) return explicit;
+    final device = WidgetsBinding.instance.platformDispatcher.locales;
+    for (final locale in device) {
+      if (AntiVirtualMessages.supportedLanguages.contains(
+        locale.languageCode,
+      )) {
+        return locale;
+      }
+    }
+    return const Locale('en');
+  }
+
   @override
   Widget build(BuildContext context) {
     final blocked = _matches.isNotEmpty;
     final loading = !_scanned && widget.waitForScan;
-    final cover = loading
+    final Widget? cover = loading
         ? (widget.loadingBuilder?.call(context) ?? const _DefaultLoading())
         : blocked
         ? (widget.blockedBuilder?.call(context, _matches) ??
               _DefaultBlockedScreen(
                 matches: _matches,
-                messages: widget.messages,
-                locale:
-                    widget.locale ??
-                    Localizations.maybeLocaleOf(context) ??
-                    PlatformDispatcher.instance.locale,
+                messages:
+                    widget.messages ??
+                    AntiVirtualMessages.forLocale(_resolveLocale()),
                 remainingSeconds: widget.forceExit ? _remaining : null,
               ))
         : null;
     return Stack(
       textDirection: Directionality.maybeOf(context) ?? TextDirection.ltr,
       children: <Widget>[
-        // Kept mounted so app state survives, but hidden and inert while covered.
-        Positioned.fill(
-          child: Offstage(offstage: cover != null, child: widget.child),
-        ),
+        // Not built before the first clean scan. Afterwards it stays mounted so
+        // state survives, but while covered it is hidden, unfocusable, cannot be
+        // hit and its tickers (animations) are paused.
+        if (_childAllowed)
+          Positioned.fill(
+            child: Offstage(
+              offstage: cover != null,
+              child: TickerMode(
+                enabled: cover == null,
+                child: ExcludeFocus(
+                  excluding: cover != null,
+                  child: IgnorePointer(
+                    ignoring: cover != null,
+                    child: widget.child,
+                  ),
+                ),
+              ),
+            ),
+          ),
         if (cover != null) Positioned.fill(child: cover),
       ],
     );
@@ -254,24 +378,19 @@ class _DefaultBlockedScreen extends StatelessWidget {
   const _DefaultBlockedScreen({
     required this.matches,
     required this.messages,
-    required this.locale,
     required this.remainingSeconds,
   });
 
   final List<AntiVirtualSignal> matches;
-  final AntiVirtualMessages? messages;
-  final Locale locale;
+  final AntiVirtualMessages messages;
   final int? remainingSeconds;
 
   @override
   Widget build(BuildContext context) {
-    // A custom [messages] object wins; otherwise pick by locale.
-    final text = messages ?? AntiVirtualMessages.forLocale(locale);
+    final text = messages;
     const white = Color(0xFFFFFFFF);
     return Directionality(
-      textDirection: AntiVirtualMessages.isRtl(locale)
-          ? TextDirection.rtl
-          : TextDirection.ltr,
+      textDirection: text.textDirection,
       child: Material(
         color: const Color(0xFF111111),
         child: SafeArea(

@@ -1,4 +1,4 @@
-import 'dart:ui' show Locale;
+import 'dart:ui' show Locale, TextDirection;
 
 import '../signal.dart';
 
@@ -10,43 +10,40 @@ class AntiVirtualMessages {
     required this.subtitle,
     required this.closingIn,
     required this.signals,
+    this.textDirection = TextDirection.ltr,
   });
 
   /// Languages shipped with the package.
-  static const List<String> supportedLanguages = <String>[
-    'en',
-    'ar',
-    'fr',
-    'es',
-  ];
+  static List<String> get supportedLanguages =>
+      List<String>.unmodifiable(_byLanguage.keys);
 
   final String title;
   final String subtitle;
 
-  /// Template containing `{n}`, replaced with the remaining seconds.
-  final String closingIn;
+  /// Builds the "the app will close in N seconds" line. A function so each
+  /// language can apply its own plural rules.
+  final String Function(int seconds) closingIn;
+
+  /// Layout direction of the language these messages are written in.
+  final TextDirection textDirection;
 
   /// One message per signal. A missing signal falls back to its enum name.
   final Map<AntiVirtualSignal, String> signals;
 
   String messageFor(AntiVirtualSignal signal) => signals[signal] ?? signal.name;
 
-  String closingMessage(int seconds) =>
-      closingIn.replaceAll('{n}', seconds.toString());
+  String closingMessage(int seconds) => closingIn(seconds);
 
   /// Messages for [locale], falling back to English.
   static AntiVirtualMessages forLocale(Locale? locale) =>
       _byLanguage[locale?.languageCode] ?? english;
 
-  /// Whether [locale] reads right to left.
-  static bool isRtl(Locale? locale) =>
-      const <String>{'ar', 'he', 'fa', 'ur'}.contains(locale?.languageCode);
-
   AntiVirtualMessages copyWith({
     String? title,
     String? subtitle,
-    String? closingIn,
+    String Function(int seconds)? closingIn,
     Map<AntiVirtualSignal, String>? signals,
+    TextDirection? textDirection,
   }) => AntiVirtualMessages(
     title: title ?? this.title,
     subtitle: subtitle ?? this.subtitle,
@@ -57,7 +54,7 @@ class AntiVirtualMessages {
   static const AntiVirtualMessages english = AntiVirtualMessages(
     title: 'This device can\'t be verified',
     subtitle: 'Please resolve the following and try again:',
-    closingIn: 'The app will close in {n} seconds.',
+    closingIn: _closingEnglish,
     signals: <AntiVirtualSignal, String>{
       AntiVirtualSignal.vpn: 'A VPN is active. Turn it off to continue.',
       AntiVirtualSignal.proxy:
@@ -86,7 +83,8 @@ class AntiVirtualMessages {
   static const AntiVirtualMessages arabic = AntiVirtualMessages(
     title: 'لا يمكن التحقق من هذا الجهاز',
     subtitle: 'يرجى معالجة ما يلي ثم المحاولة مرة أخرى:',
-    closingIn: 'سيُغلق التطبيق خلال {n} ثانية.',
+    closingIn: _closingArabic,
+    textDirection: TextDirection.rtl,
     signals: <AntiVirtualSignal, String>{
       AntiVirtualSignal.vpn: 'شبكة VPN نشطة. أوقفها للمتابعة.',
       AntiVirtualSignal.proxy: 'تم إعداد وكيل (Proxy) للشبكة. أزله للمتابعة.',
@@ -115,7 +113,7 @@ class AntiVirtualMessages {
   static const AntiVirtualMessages french = AntiVirtualMessages(
     title: 'Cet appareil ne peut pas être vérifié',
     subtitle: 'Veuillez corriger les points suivants puis réessayer :',
-    closingIn: 'L\'application se fermera dans {n} secondes.',
+    closingIn: _closingFrench,
     signals: <AntiVirtualSignal, String>{
       AntiVirtualSignal.vpn: 'Un VPN est actif. Désactivez-le pour continuer.',
       AntiVirtualSignal.proxy:
@@ -142,7 +140,7 @@ class AntiVirtualMessages {
   static const AntiVirtualMessages spanish = AntiVirtualMessages(
     title: 'No se puede verificar este dispositivo',
     subtitle: 'Soluciona lo siguiente e inténtalo de nuevo:',
-    closingIn: 'La aplicación se cerrará en {n} segundos.',
+    closingIn: _closingSpanish,
     signals: <AntiVirtualSignal, String>{
       AntiVirtualSignal.vpn: 'Hay una VPN activa. Desactívala para continuar.',
       AntiVirtualSignal.proxy:
@@ -174,4 +172,28 @@ class AntiVirtualMessages {
         'fr': french,
         'es': spanish,
       };
+}
+
+String _closingEnglish(int n) => n == 1
+    ? 'The app will close in 1 second.'
+    : 'The app will close in $n seconds.';
+
+// French treats 0 and 1 as singular.
+String _closingFrench(int n) => n <= 1
+    ? "L'application se fermera dans $n seconde."
+    : "L'application se fermera dans $n secondes.";
+
+String _closingSpanish(int n) => n == 1
+    ? 'La aplicación se cerrará en 1 segundo.'
+    : 'La aplicación se cerrará en $n segundos.';
+
+// Arabic has distinct forms for 1, 2, 3-10 and 11+ (0 and 100+ ignored here).
+String _closingArabic(int n) {
+  final unit = switch (n) {
+    1 => 'ثانية واحدة',
+    2 => 'ثانيتين',
+    >= 3 && <= 10 => '$n ثوانٍ',
+    _ => '$n ثانية',
+  };
+  return 'سيُغلق التطبيق خلال $unit.';
 }
