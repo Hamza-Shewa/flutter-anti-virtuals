@@ -14,10 +14,8 @@ import 'messages.dart';
 
 /// Builds the screen shown while [matches] (in [AntiVirtualSignal] order) are
 /// detected, for example `[vpn, mockLocation]`.
-typedef AntiVirtualBlockedBuilder = Widget Function(
-  BuildContext context,
-  List<AntiVirtualSignal> matches,
-);
+typedef AntiVirtualBlockedBuilder =
+    Widget Function(BuildContext context, List<AntiVirtualSignal> matches);
 
 /// Runs a scan when the app starts (and when it returns to the foreground) and
 /// covers [child] with a blocking screen while a blocking signal is detected.
