@@ -448,3 +448,18 @@ internal class DeviceKeyRulesTest {
         assertEquals("software", DeviceKeyRules.protection(strongBox = false, hardware = false))
     }
 }
+
+internal class PlayIntegrityRulesTest {
+    @Test
+    fun theBindingIsTheSha256OfThePayloadBytes() {
+        // sha256("abc")
+        val expected = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        assertEquals(expected, PlayIntegrityRules.binding("abc").joinToString("") { "%02x".format(it) })
+    }
+
+    @Test
+    fun theBindingCoversNonAsciiText() {
+        assertEquals(32, PlayIntegrityRules.binding("{\"nonce\":\"é\"}").size)
+        assertTrue(!PlayIntegrityRules.binding("a").contentEquals(PlayIntegrityRules.binding("b")))
+    }
+}

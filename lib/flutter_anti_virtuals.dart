@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
 
 import 'flutter_anti_virtuals_platform_interface.dart';
+import 'src/attestation.dart';
 import 'src/report.dart';
 import 'src/scan_options.dart';
 import 'src/screen_protection.dart';
@@ -10,6 +11,7 @@ import 'src/signal.dart';
 
 export 'src/guard/anti_virtual_guard.dart';
 export 'src/guard/messages.dart';
+export 'src/attestation.dart';
 export 'src/report.dart';
 export 'src/scan_options.dart';
 export 'src/screen_protection.dart';
@@ -35,11 +37,18 @@ class FlutterAntiVirtuals {
   /// report can be replayed. See [SignedReport] for what the backend must
   /// verify, and call this right before the sensitive action, not at startup.
   ///
+  /// Pass [attestation] to also request a Play Integrity token (Android) or
+  /// an App Attest attestation / assertion (iOS) bound to the same payload,
+  /// which lets the backend confirm the device and app with Google or Apple.
+  /// It is requested after signing, so a failure there throws and no
+  /// half-attested report is returned.
+  ///
   /// Throws an [ArgumentError] for a short [nonce]; native failures propagate
   /// as `PlatformException` and must be treated as an unverified device.
   Future<SignedReport> verify({
     required String nonce,
     ScanOptions? options,
+    AttestationOptions? attestation,
   }) async {
     if (nonce.length < 16) {
       throw ArgumentError.value(
@@ -63,6 +72,12 @@ class FlutterAntiVirtuals {
       nonce,
       payload,
     );
+    final platformAttestation = attestation == null
+        ? null
+        : await FlutterAntiVirtualsPlatform.instance.requestAttestation(
+            payload,
+            attestation,
+          );
     return SignedReport(
       nonce: nonce,
       issuedAt: issuedAt,
@@ -70,6 +85,7 @@ class FlutterAntiVirtuals {
       payload: payload,
       signature: signature,
       report: report,
+      attestation: platformAttestation,
     );
   }
 

@@ -53,7 +53,60 @@ Do these in order and reject on the first failure.
 5. **Policy.** Only now read `payload.signals` and decide, for example reject
    when `rooted`, `hooked`, `emulator` or `mockLocation` is detected.
 
-## iOS
+## Platform attestation (Play Integrity, App Attest)
+
+`verify(nonce: ..., attestation: AttestationOptions())` also asks Google or
+Apple for a token bound to the same payload, so the backend can confirm the
+device and the app with the platform vendor instead of trusting the report. The
+binding is the SHA-256 of the UTF-8 bytes of `payload`; because the payload
+contains the nonce, the nonce is covered too. The token is in
+`toJson()['attestation']`.
+
+### Android: Play Integrity
+
+`attestation.token` is a Play Integrity token. Never decode it on the device.
+Your backend calls Google's `decodeIntegrityToken` (service account, or the
+Play Integrity API with your Google Cloud project) and checks:
+
+* `requestDetails.nonce` is the URL-safe base64 without padding of the SHA-256
+  of the `payload` you received, `requestDetails.requestPackageName` is your
+  package and `timestampMillis` is recent;
+* `appIntegrity.appRecognitionVerdict` is `PLAY_RECOGNIZED` and
+  `certificateSha256Digest` is your release certificate;
+* `deviceIntegrity.deviceRecognitionVerdict` contains
+  `MEETS_DEVICE_INTEGRITY` (or `MEETS_STRONG_INTEGRITY` for the most
+  sensitive actions);
+* optionally `accountDetails.appLicensingVerdict` is `LICENSED`.
+
+Pass `AttestationOptions(cloudProjectNumber: ...)` unless the app is on Google
+Play and linked to that project in the Play Console. The token is a classic
+request, so the quota is per project and day: request it before sensitive
+actions, not on every launch. The app needs the `INTERNET` permission.
+
+### iOS: App Attest
+
+Enable the App Attest capability (entitlement
+`com.apple.developer.devicecheck.appattest-environment`, `development` or
+`production`). The Simulator does not support it and `verify` then throws.
+
+* The first request of a key returns an **attestation** (`assertion: false`).
+  Verify it as Apple documents: the CBOR object's `x5c` chain leads to the
+  Apple App Attestation root, the nonce extension (OID
+  `1.2.840.113635.100.8.2`) equals `SHA256(authData || SHA256(payload))`,
+  `authData.rpIdHash` is `SHA256("<TeamID>.<BundleID>")`, the counter is 0,
+  the AAGUID is `appattest` (production) and the credential id equals `keyId`.
+  **Store `keyId` and the public key from the certificate**; this enrolls the
+  device.
+* Every later request returns an **assertion** (`assertion: true`). Verify the
+  signature over `authData || SHA256(payload)` with the stored public key, the
+  `rpIdHash`, and that the counter is greater than the stored one, then store
+  the new counter.
+* If your backend does not know `keyId` (the first request never arrived, the
+  database was reset), call `verify` again with
+  `AttestationOptions(resetAppAttestKey: true)` to enroll a new key. Do not do
+  this on every request: Apple rate limits key attestation.
+
+## iOS without App Attest
 
 iOS has no key attestation, so on iOS the signature only proves that the
 payload was not altered in transit and was produced with a fresh key. It does

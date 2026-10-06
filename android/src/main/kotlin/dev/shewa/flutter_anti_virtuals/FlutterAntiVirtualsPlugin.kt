@@ -110,6 +110,22 @@ class FlutterAntiVirtualsPlugin : FlutterPlugin, ActivityAware, MethodCallHandle
                     }
                 }
             }
+            "attest" -> {
+                val args = call.arguments as? Map<String, Any?>
+                val payload = args?.get("payload") as? String
+                if (payload == null) {
+                    result.error("bad_arguments", "payload is required", null)
+                    return
+                }
+                val project = (args["cloudProjectNumber"] as? Number)?.toLong()
+                // The Play Integrity callbacks arrive on the main thread.
+                PlayIntegrity.request(context, payload, project) { outcome ->
+                    outcome.fold(
+                        onSuccess = { result.success(it) },
+                        onFailure = { result.error("attest_failed", it.message, it.javaClass.simpleName) }
+                    )
+                }
+            }
             "setScreenProtection" -> {
                 val config = ScreenProtectionConfig.from(call.arguments as? Map<String, Any?>)
                 result.success(protector.apply(config))

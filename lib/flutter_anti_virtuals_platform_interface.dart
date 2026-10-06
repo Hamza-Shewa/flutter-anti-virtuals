@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'flutter_anti_virtuals_method_channel.dart';
+import 'src/attestation.dart';
 import 'src/report.dart';
 import 'src/scan_options.dart';
 import 'src/screen_protection.dart';
@@ -39,6 +40,16 @@ abstract class FlutterAntiVirtualsPlatform extends PlatformInterface {
   /// challenge is the SHA-256 of [nonce] where the device supports it.
   Future<DeviceSignature> signPayload(String nonce, String payload) {
     throw UnimplementedError('signPayload() has not been implemented.');
+  }
+
+  /// Asks Play Integrity (Android) or App Attest (iOS) for a token bound to
+  /// [payload]: the nonce or client data hash is the SHA-256 of its UTF-8
+  /// bytes. Fails when the service is unavailable on this device.
+  Future<PlatformAttestation> requestAttestation(
+    String payload,
+    AttestationOptions options,
+  ) {
+    throw UnimplementedError('requestAttestation() has not been implemented.');
   }
 
   /// Emits whenever the network setup changes in a way that can turn a VPN or

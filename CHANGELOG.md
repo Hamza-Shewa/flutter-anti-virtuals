@@ -6,6 +6,11 @@
 
 ## Unreleased
 
+* `verify(attestation: AttestationOptions(...))` also requests a Play Integrity
+  token (Android, classic request, new `com.google.android.play:integrity`
+  dependency) or an App Attest attestation / assertion (iOS) whose nonce or
+  client data hash is the SHA-256 of the signed payload, returned in
+  `SignedReport.attestation`. A failed request throws.
 * `FlutterAntiVirtuals.instance.verify(nonce: ...)` returns a `SignedReport`: a
   scan bound to a backend-issued nonce and signed with a key created on the
   device for that request (Android Keystore EC key attested with the SHA-256 of

@@ -1,6 +1,8 @@
 import AVFoundation
 import CFNetwork
 import CoreLocation
+import CryptoKit
+import DeviceCheck
 import Flutter
 import Foundation
 import MachO
@@ -155,6 +157,24 @@ public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHa
           case .success(let map): result(map)
           case .failure(let error):
             result(FlutterError(code: "sign_failed", message: error.message, details: nil))
+          }
+        }
+      }
+      return
+    }
+    if call.method == "attest" {
+      guard let args = call.arguments as? [String: Any], let payload = args["payload"] as? String
+      else {
+        result(FlutterError(code: "bad_arguments", message: "payload is required", details: nil))
+        return
+      }
+      let reset = args["resetAppAttestKey"] as? Bool ?? false
+      AppAttest.request(payload: payload, reset: reset) { outcome in
+        DispatchQueue.main.async {
+          switch outcome {
+          case .success(let map): result(map)
+          case .failure(let error):
+            result(FlutterError(code: "attest_failed", message: error.message, details: nil))
           }
         }
       }
@@ -528,5 +548,65 @@ enum DeviceKey {
     }
     attributes[kSecPrivateKeyAttrs as String] = privateAttributes
     return SecKeyCreateRandomKey(attributes as CFDictionary, nil)
+  }
+}
+
+/// Apple App Attest. The first request of a key returns an attestation (the backend stores the
+/// key's public key from it); every later one returns an assertion signed by that key. The client
+/// data hash is the SHA-256 of the signed payload, so the token is bound to this request.
+enum AppAttest {
+  private static let storedKey = "dev.shewa.flutter_anti_virtuals.appAttestKeyId"
+
+  static func request(
+    payload: String, reset: Bool,
+    completion: @escaping (Result<[String: Any], DeviceKeyError>) -> Void
+  ) {
+    let service = DCAppAttestService.shared
+    guard service.isSupported else {
+      completion(.failure(DeviceKeyError(message: "App Attest is not supported on this device")))
+      return
+    }
+    let defaults = UserDefaults.standard
+    if reset { defaults.removeObject(forKey: storedKey) }
+    let hash = Data(SHA256.hash(data: Data(payload.utf8)))
+
+    if let keyId = defaults.string(forKey: storedKey) {
+      service.generateAssertion(keyId, clientDataHash: hash) { assertion, error in
+        guard let assertion = assertion else {
+          completion(.failure(failure(error, "could not generate an App Attest assertion")))
+          return
+        }
+        completion(
+          .success([
+            "type": "appAttest", "token": assertion.base64EncodedString(), "keyId": keyId,
+            "assertion": true,
+          ]))
+      }
+      return
+    }
+
+    service.generateKey { keyId, error in
+      guard let keyId = keyId else {
+        completion(.failure(failure(error, "could not generate an App Attest key")))
+        return
+      }
+      service.attestKey(keyId, clientDataHash: hash) { attestation, error in
+        guard let attestation = attestation else {
+          completion(.failure(failure(error, "could not attest the App Attest key")))
+          return
+        }
+        // Only remembered once Apple accepted it; the backend must now store the key.
+        defaults.set(keyId, forKey: storedKey)
+        completion(
+          .success([
+            "type": "appAttest", "token": attestation.base64EncodedString(), "keyId": keyId,
+            "assertion": false,
+          ]))
+      }
+    }
+  }
+
+  private static func failure(_ error: Error?, _ fallback: String) -> DeviceKeyError {
+    DeviceKeyError(message: error?.localizedDescription ?? fallback)
   }
 }
