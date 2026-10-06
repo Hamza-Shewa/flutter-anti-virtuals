@@ -104,6 +104,7 @@ also compare the clock.
 | `proxy` | yes | yes | Per-network proxy, PAC file, JVM proxy properties |
 | `mockLocation` | yes | iOS 15+ | `Location.isMock` of a fix from the last 2 minutes (needs granted location permission and the app in the foreground), known mock apps; iOS `isSimulatedBySoftware` |
 | `virtualCamera` | partial | iOS 17+ | Known virtual-camera apps, external cameras |
+| `emulator` | yes | yes | Android: any one strong indicator (`ro.kernel.qemu`/`ro.boot.qemu`, goldfish/ranchu/vbox86 hardware, qemu and vendor files, Genymotion, BlueStacks, Nox, LDPlayer, MEmu builds or apps, Goldfish sensors) or two weak ones (generic fingerprint, SDK model or product, no sensors, operator "Android", ...), so real devices are not reported. iOS: Simulator build, `SIMULATOR_*` environment, host CPU as hardware model |
 | `developerOptions` | yes | no | `DEVELOPMENT_SETTINGS_ENABLED` |
 | `adb` | yes | no | USB and wireless debugging |
 | `clockTampering` | yes | needs `trustedTime` | Auto time/zone off, skew against server time |
@@ -119,6 +120,20 @@ also compare the clock.
 `developerOptions`, `adb`, `clockTampering`, `untrustedInstaller`,
 `signatureMismatch`, `accessibilityAbuse`, `remoteControlApp`, `clonedApp`,
 `userCertificates`, `sideloaded`.
+
+`emulator` is not in `AntiVirtualGuard.defaultBlockingSignals`, so the guard
+does not block your own emulator or Simulator while you develop. Block it in
+release builds only:
+
+```dart
+AntiVirtualGuard(
+  blockOn: {
+    ...AntiVirtualGuard.defaultBlockingSignals,
+    if (kReleaseMode) AntiVirtualSignal.emulator,
+  },
+  child: child,
+)
+```
 
 ## Limits
 

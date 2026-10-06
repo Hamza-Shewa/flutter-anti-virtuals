@@ -93,4 +93,27 @@ internal object KnownPackages {
         "info.red.virtual",
         "com.cloneapp.parallel"
     )
+
+    /** Apps preinstalled by desktop Android emulators. */
+    val emulator = setOf(
+        "com.bluestacks.appmart",
+        "com.bluestacks.home",
+        "com.bluestacks.settings",
+        "com.bluestacks.bstfolder",
+        "com.bluestacks.launcher",
+        "com.bignox.app",
+        "com.bignox.launcher",
+        "com.vphone.launcher",
+        "com.ldmnq.launcher3",
+        "com.android.flysilkworm",
+        "com.microvirt.launcher",
+        "com.microvirt.guide",
+        "com.microvirt.tools",
+        "com.microvirt.memuime",
+        "com.genymotion.superuser",
+        "com.genymotion.systempatcher",
+        "com.google.android.launcher.layouts.genymotion",
+        "com.mumu.launcher",
+        "com.netease.mumu.cloner"
+    )
 }

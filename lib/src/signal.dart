@@ -5,6 +5,7 @@ enum AntiVirtualSignal {
   proxy,
   mockLocation,
   virtualCamera,
+  emulator,
 
   // Beyond what `flutter_defender` offers.
   developerOptions,

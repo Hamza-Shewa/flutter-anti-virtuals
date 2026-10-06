@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+* New `emulator` signal (`ScanOptions.checkEmulator`, on by default): Android
+  emulators (Android Studio, Genymotion, BlueStacks, Nox, LDPlayer, MEmu, ...)
+  from qemu properties, emulator hardware, files, apps and sensors, needing
+  one strong or two weak indicators so real devices are not reported; the iOS
+  Simulator from the build target, `SIMULATOR_*` variables and the hardware
+  model. Localized for the guard's default screen; not in
+  `defaultBlockingSignals`.
 * `ScanOptions` now has one `check*` boolean per signal (all on by default)
   instead of a `signals` set, and asserts that configured checks receive their
   configuration (`expectedSignatureSha256`, `trustedInstallers`).

@@ -82,7 +82,88 @@ internal class RulesTest {
         val queried = Regex("<package android:name=\"([^\"]+)\"").findAll(manifest)
             .map { it.groupValues[1] }.toSet()
         val known = KnownPackages.mockLocation + KnownPackages.remoteControl +
-            KnownPackages.virtualCamera + KnownPackages.cloners
+            KnownPackages.virtualCamera + KnownPackages.cloners + KnownPackages.emulator
         assertEquals(known, queried)
+    }
+}
+
+internal class EmulatorRulesTest {
+    private val pixel = EmulatorEvidence(
+        fingerprint = "google/husky/husky:15/AP4A.250105.002/12701944:user/release-keys",
+        model = "Pixel 8 Pro",
+        manufacturer = "Google",
+        brand = "google",
+        device = "husky",
+        product = "husky",
+        hardware = "husky",
+        board = "husky",
+        sensorNames = listOf("LSM6DSV Accelerometer", "LSM6DSV Gyroscope"),
+        networkOperatorName = "Vodafone"
+    )
+
+    @Test
+    fun realDevicesAreClean() {
+        assertTrue(EmulatorRules.details(pixel).isEmpty())
+        val samsung = pixel.copy(
+            fingerprint = "samsung/a15nsxx/a15:14/UP1A.231005.007/A155FXXU1AXA1:user/release-keys",
+            model = "SM-A155F", manufacturer = "samsung", brand = "samsung",
+            device = "a15", product = "a15nsxx", hardware = "mt6789", board = "a15"
+        )
+        assertTrue(EmulatorRules.details(samsung).isEmpty())
+        // Names that merely contain an emulator token.
+        assertTrue(EmulatorRules.details(pixel.copy(product = "equinox", device = "lenovo_tab")).isEmpty())
+    }
+
+    @Test
+    fun oneWeakIndicatorIsNotEnough() {
+        assertTrue(EmulatorRules.details(pixel.copy(fingerprint = "generic/x/y:13/z:user/release-keys")).isEmpty())
+        assertTrue(EmulatorRules.details(pixel.copy(sensorNames = emptyList())).isEmpty())
+        assertTrue(EmulatorRules.details(pixel.copy(properties = mapOf("qemu.hw.mainkeys" to "0"))).isEmpty())
+        assertTrue(EmulatorRules.details(pixel.copy(networkOperatorName = "Android")).isEmpty())
+    }
+
+    @Test
+    fun twoWeakIndicatorsAreEnough() {
+        val d = EmulatorRules.details(
+            pixel.copy(fingerprint = "generic/x/y:13/z:user/release-keys", sensorNames = emptyList())
+        )
+        assertEquals(listOf("generic fingerprint", "no sensors"), d)
+    }
+
+    @Test
+    fun androidStudioEmulator() {
+        val d = EmulatorRules.details(
+            EmulatorEvidence(
+                fingerprint = "google/sdk_gphone64_x86_64/emu64xa:16/BE2A.250530.026.F3/13894323:userdebug/dev-keys",
+                model = "sdk_gphone64_x86_64",
+                manufacturer = "Google",
+                brand = "google",
+                device = "emu64xa",
+                product = "sdk_gphone64_x86_64",
+                hardware = "ranchu",
+                properties = mapOf("ro.kernel.qemu" to "1", "ro.boot.qemu" to "1", "ro.hardware" to "ranchu"),
+                sensorNames = listOf("Goldfish 3-axis Accelerometer")
+            )
+        )
+        assertTrue("ro.kernel.qemu=1" in d)
+        assertTrue("emulator hardware ranchu" in d)
+        assertTrue("1 emulated Goldfish sensors" in d)
+    }
+
+    @Test
+    fun anyStrongIndicatorIsEnough() {
+        assertTrue(EmulatorRules.details(pixel.copy(manufacturer = "Genymotion")).isNotEmpty())
+        assertTrue(EmulatorRules.details(pixel.copy(hardware = "vbox86")).isNotEmpty())
+        assertTrue(EmulatorRules.details(pixel.copy(product = "nox")).isNotEmpty())
+        assertTrue(EmulatorRules.details(pixel.copy(properties = mapOf("ro.boot.qemu" to "1"))).isNotEmpty())
+        assertTrue(EmulatorRules.details(pixel.copy(properties = mapOf("ro.kernel.qemu" to "0"))).isEmpty())
+        assertEquals(
+            listOf("LDPlayer file /system/bin/ldinit"),
+            EmulatorRules.details(pixel.copy(existingFiles = setOf("/system/bin/ldinit")))
+        )
+        assertEquals(
+            listOf("emulator app com.bluestacks.home"),
+            EmulatorRules.details(pixel.copy(installedPackages = setOf("com.bluestacks.home")))
+        )
     }
 }
