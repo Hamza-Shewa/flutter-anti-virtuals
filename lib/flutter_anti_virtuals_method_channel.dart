@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'flutter_anti_virtuals_platform_interface.dart';
 import 'src/report.dart';
 import 'src/scan_options.dart';
+import 'src/screen_protection.dart';
 
 class MethodChannelFlutterAntiVirtuals extends FlutterAntiVirtualsPlatform {
   @visibleForTesting
@@ -22,6 +23,21 @@ class MethodChannelFlutterAntiVirtuals extends FlutterAntiVirtualsPlatform {
       options.toMap(),
     );
     return AntiVirtualReport.fromMap(raw ?? const <Object?, Object?>{});
+  }
+
+  @override
+  Future<bool> setScreenProtection(ScreenProtectionOptions? options) async {
+    final applied = await methodChannel.invokeMethod<bool>(
+      'setScreenProtection',
+      (options ??
+              const ScreenProtectionOptions(
+                secureWindow: false,
+                filterObscuredTouches: false,
+                hideOverlayWindows: false,
+              ))
+          .toMap(),
+    );
+    return applied ?? false;
   }
 
   // One shared stream: an event channel has a single message handler, so a

@@ -6,6 +6,17 @@
 
 ## Unreleased
 
+* Screen protection. `FlutterAntiVirtuals.instance.protectScreen()` /
+  `unprotectScreen()` and `AntiVirtualGuard(protectScreen: ...)`: Android sets
+  `FLAG_SECURE` (no screenshots, recording or casting, blank recents
+  thumbnail), ignores touches through overlay windows and hides overlay windows
+  on Android 12+; iOS, which cannot block capture, covers the app with a blur
+  while it is recorded, mirrored or in the app switcher. New `screenCapture`
+  signal (`checkScreenCapture`, on by default, not blocking by default):
+  external and wireless displays, screen recording on Android 15+, iOS
+  `isCaptured`. Display and capture changes also trigger the guard's live
+  rescan. The Android manifest declares `HIDE_OVERLAY_WINDOWS` and
+  `DETECT_SCREEN_RECORDING` (normal permissions).
 * New `hooked` and `debugger` signals (`checkHooked`, `checkDebugger`, on by
   default, not blocking by default). `hooked`: Frida and Xposed/LSPosed/
   EdXposed/Substrate libraries in the process, Frida threads, hooking classes,

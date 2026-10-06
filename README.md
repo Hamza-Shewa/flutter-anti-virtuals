@@ -80,6 +80,29 @@ example in a widget test that only mocks the `flutter_anti_virtuals` method
 channel, it simply never emits. A scan is started at most `liveDebounce` x 4
 after the first change of a burst, so a flapping network cannot postpone it.
 
+## Protecting the screen
+
+Detecting a screen recording is not the same as stopping it. For the screens
+that show balances, codes or documents:
+
+```dart
+AntiVirtualGuard(
+  protectScreen: const ScreenProtectionOptions(),   // or call
+  blockOn: {...AntiVirtualGuard.defaultBlockingSignals,   // protectScreen() yourself
+            AntiVirtualSignal.screenCapture},
+  child: child,
+)
+```
+
+| Platform | What `protectScreen` does |
+| --- | --- |
+| Android | `FLAG_SECURE`: screenshots, screen recording and casting show black, and the recent-apps thumbnail is blank. `setFilterTouchesWhenObscured`: touches that pass through another app's window drawn over yours are dropped (tapjacking). Android 12+: `setHideOverlayWindows`, so other apps' overlay windows are hidden while yours is in front |
+| iOS | Apple offers no switch for this. The app is covered with a blur while the screen is recorded or mirrored and while the app is in the app switcher |
+
+It also stops your own users from taking screenshots, so it is off by default.
+The plugin declares the `HIDE_OVERLAY_WINDOWS` and `DETECT_SCREEN_RECORDING`
+permissions; both are normal permissions granted at install.
+
 ## Choosing checks
 
 `ScanOptions` has one boolean per signal (`checkVpn`, `checkProxy`,
@@ -108,6 +131,7 @@ also compare the clock.
 | `rooted` | yes | yes | Android root, iOS jailbreak. Android: any one strong indicator (`su`, `magisk` or `daemonsu` in `PATH` and the usual directories, a root manager or root-hiding app such as Magisk, KernelSU, APatch, SuperSU, RootCloak, root tool files, a writable `/system`, `/vendor` or `/product`, `adbd` as root, `ro.secure=0`, permissive SELinux, Magisk/KernelSU/APatch mounts) or two weak ones (a debug build of the system and an unlocked bootloader). iOS: Cydia, Sileo, Zebra, Filza and other jailbreak files (rootless `/var/jb` and `/var/binpack` too), a successful write outside the sandbox, injected tweak libraries (Substrate, Substitute, libhooker, ElleKit) and `DYLD_INSERT_LIBRARIES`. The iOS Simulator is reported by `emulator`, not here |
 | `hooked` | yes | yes | Instrumentation in the app process. Android: Frida, Xposed, LSPosed, EdXposed, Substrate or Riru/Zygisk libraries in `/proc/self/maps`, Frida threads, `XposedBridge` classes, hooking managers and files, framework frames in the plugin's own call stack (a hooked method), Frida's default server port. iOS: injected Frida, Substrate, Substitute, libhooker and ElleKit libraries, hooking classes, `DYLD_INSERT_LIBRARIES`, the Frida port |
 | `debugger` | yes | yes | A Java debugger or `TracerPid` (Android), `P_TRACED` (iOS). A debug build started from your IDE reports it, so it is not blocking by default |
+| `screenCapture` | yes | yes | External or wireless displays (Android presentation displays, iOS extra screens), screen recording on Android 15+, iOS `isCaptured`. Casting and recording by a private virtual display are not visible to Android before 15 |
 | `developerOptions` | yes | no | `DEVELOPMENT_SETTINGS_ENABLED` |
 | `adb` | yes | no | USB and wireless debugging |
 | `clockTampering` | yes | needs `trustedTime` | Auto time/zone off, skew against server time |

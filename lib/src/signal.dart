@@ -9,6 +9,7 @@ enum AntiVirtualSignal {
   rooted,
   hooked,
   debugger,
+  screenCapture,
 
   // Beyond what `flutter_defender` offers.
   developerOptions,

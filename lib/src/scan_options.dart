@@ -21,6 +21,7 @@ class ScanOptions {
     this.checkRooted = true,
     this.checkHooked = true,
     this.checkDebugger = true,
+    this.checkScreenCapture = true,
     this.checkDeveloperOptions = true,
     this.checkAdb = true,
     this.checkClockTampering = true,
@@ -86,6 +87,11 @@ class ScanOptions {
   /// A debugger attached to the process (Java debugger, `TracerPid`,
   /// iOS `P_TRACED`). A debug build run from your IDE reports it too.
   final bool checkDebugger;
+
+  /// The screen is being recorded or mirrored, or an external or wireless
+  /// display is connected (Android: presentation displays, and screen
+  /// recording on Android 15+; iOS: `UIScreen.isCaptured` and extra screens).
+  final bool checkScreenCapture;
 
   /// Android developer options enabled.
   final bool checkDeveloperOptions;
@@ -154,6 +160,7 @@ class ScanOptions {
           other.checkRooted == checkRooted &&
           other.checkHooked == checkHooked &&
           other.checkDebugger == checkDebugger &&
+          other.checkScreenCapture == checkScreenCapture &&
           other.checkDeveloperOptions == checkDeveloperOptions &&
           other.checkAdb == checkAdb &&
           other.checkClockTampering == checkClockTampering &&
@@ -183,6 +190,7 @@ class ScanOptions {
     checkRooted,
     checkHooked,
     checkDebugger,
+    checkScreenCapture,
     checkDeveloperOptions,
     checkAdb,
     checkClockTampering,
@@ -210,6 +218,7 @@ class ScanOptions {
     if (checkRooted) AntiVirtualSignal.rooted,
     if (checkHooked) AntiVirtualSignal.hooked,
     if (checkDebugger) AntiVirtualSignal.debugger,
+    if (checkScreenCapture) AntiVirtualSignal.screenCapture,
     if (checkDeveloperOptions) AntiVirtualSignal.developerOptions,
     if (checkAdb) AntiVirtualSignal.adb,
     if (checkClockTampering) AntiVirtualSignal.clockTampering,
@@ -233,6 +242,7 @@ class ScanOptions {
     checkRooted: signal == AntiVirtualSignal.rooted,
     checkHooked: signal == AntiVirtualSignal.hooked,
     checkDebugger: signal == AntiVirtualSignal.debugger,
+    checkScreenCapture: signal == AntiVirtualSignal.screenCapture,
     checkDeveloperOptions: signal == AntiVirtualSignal.developerOptions,
     checkAdb: signal == AntiVirtualSignal.adb,
     checkClockTampering: signal == AntiVirtualSignal.clockTampering,

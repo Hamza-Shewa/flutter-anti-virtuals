@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import '../../flutter_anti_virtuals_platform_interface.dart';
 import '../report.dart';
 import '../scan_options.dart';
+import '../screen_protection.dart';
 import '../signal.dart';
 import 'messages.dart';
 
@@ -63,6 +64,7 @@ class AntiVirtualGuard extends StatefulWidget {
     this.rescanInterval,
     this.liveMonitoring = true,
     this.liveDebounce = const Duration(milliseconds: 500),
+    this.protectScreen,
     this.failClosed = false,
     this.unmountWhileBlocked = true,
     this.onReport,
@@ -156,13 +158,21 @@ class AntiVirtualGuard extends StatefulWidget {
   /// default) disables the periodic scan.
   final Duration? rescanInterval;
 
-  /// Scan again as soon as the network changes (a VPN or proxy switched on
-  /// while the app is in the foreground), see
-  /// [FlutterAntiVirtuals.environmentChanges]. Changes while the app is in the
+  /// Scan again as soon as the network or the screen-capture state changes (a
+  /// VPN or proxy switched on, a screen recording or cast started while the
+  /// app is in the foreground), see [FlutterAntiVirtuals.environmentChanges]. Changes while the app is in the
   /// background are covered by the rescan on resume. Mock location and the
   /// camera have no change notification, so they are only seen by the other
   /// rescans.
   final bool liveMonitoring;
+
+  /// Protects the screen while the guard is mounted: no screenshots, screen
+  /// recording or casting, no touches through overlays and a blank thumbnail
+  /// in the recent apps list (see [ScreenProtectionOptions]). Off (`null`) by
+  /// default, because it also stops your own users from taking screenshots.
+  /// Pair it with [AntiVirtualSignal.screenCapture] in [blockOn] to hide the
+  /// app while the screen is recorded or mirrored.
+  final ScreenProtectionOptions? protectScreen;
 
   /// Waits this long after a network change before scanning, so a burst of
   /// changes (a VPN coming up touches several networks) causes one scan.
@@ -233,6 +243,7 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     _childAllowed = !widget.waitForScan;
     _syncInterval();
     _syncLive();
+    if (widget.protectScreen != null) _syncProtection();
     _scan();
   }
 
@@ -249,6 +260,10 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     if (old.waitForScan && !widget.waitForScan) _childAllowed = true;
     if (old.rescanInterval != widget.rescanInterval) _syncInterval();
     if (old.liveMonitoring != widget.liveMonitoring) _syncLive();
+    if (old.protectScreen != widget.protectScreen &&
+        (old.protectScreen != null || widget.protectScreen != null)) {
+      _syncProtection();
+    }
     if (changedOptions) {
       _scan();
     } else if (!setEquals(old.blockOn, widget.blockOn) ||
@@ -270,6 +285,13 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     _cancelLiveTimers();
     _liveRetryTimer?.cancel();
     _liveSubscription?.cancel();
+    if (widget.protectScreen != null) {
+      unawaited(
+        FlutterAntiVirtualsPlatform.instance
+            .setScreenProtection(null)
+            .then<void>((_) {}, onError: (Object _) {}),
+      );
+    }
     super.dispose();
   }
 
@@ -327,6 +349,18 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     if (!widget.liveMonitoring) return;
     _liveSubscription = FlutterAntiVirtualsPlatform.instance.environmentChanges
         .listen(_onNetworkChange, onError: _onLiveError);
+  }
+
+  void _syncProtection() {
+    FlutterAntiVirtualsPlatform.instance
+        .setScreenProtection(widget.protectScreen)
+        .then<void>(
+          (_) {},
+          onError: (Object error, StackTrace stackTrace) {
+            if (error is MissingPluginException) return;
+            _reportError(error, stackTrace, 'while protecting the screen');
+          },
+        );
   }
 
   void _cancelLiveTimers() {

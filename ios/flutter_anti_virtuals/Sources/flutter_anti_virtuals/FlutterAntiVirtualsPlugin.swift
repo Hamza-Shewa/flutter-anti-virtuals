@@ -12,6 +12,9 @@ public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHa
   private var channel: FlutterMethodChannel?
   private var changes: FlutterEventChannel?
   private var monitor: NWPathMonitor?
+  private var captureObservers: [NSObjectProtocol] = []
+  private var protectionObservers: [NSObjectProtocol] = []
+  private var privacyView: UIView?
   // Bumped on every listen and cancel, so updates queued by an old monitor are ignored.
   private var generation = 0
 
@@ -31,6 +34,7 @@ public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHa
 
   public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
     _ = onCancel(withArguments: nil)
+    setPrivacyCover(enabled: false)
     changes?.setStreamHandler(nil)
     channel?.setMethodCallHandler(nil)
     changes = nil
@@ -61,6 +65,18 @@ public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHa
     }
     monitor.start(queue: DispatchQueue(label: "dev.shewa.flutter_anti_virtuals.path"))
     self.monitor = monitor
+    // Recording, mirroring and a cable or AirPlay display are as relevant as a VPN.
+    let center = NotificationCenter.default
+    for name in [
+      UIScreen.capturedDidChangeNotification, UIScreen.didConnectNotification,
+      UIScreen.didDisconnectNotification,
+    ] {
+      captureObservers.append(
+        center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+          guard let self = self, self.generation == current else { return }
+          events("capture")
+        })
+    }
     return nil
   }
 
@@ -69,10 +85,62 @@ public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHa
     monitor?.pathUpdateHandler = nil
     monitor?.cancel()
     monitor = nil
+    captureObservers.forEach { NotificationCenter.default.removeObserver($0) }
+    captureObservers = []
     return nil
   }
 
+  // Apple has no way to block screenshots or recordings. What an app can do is cover its
+  // content: while the screen is recorded or mirrored, and when the app goes to the app
+  // switcher (the snapshot taken there shows whatever is on screen).
+  private func setPrivacyCover(enabled: Bool) {
+    protectionObservers.forEach { NotificationCenter.default.removeObserver($0) }
+    protectionObservers = []
+    showPrivacyView(false)
+    guard enabled else { return }
+    let center = NotificationCenter.default
+    protectionObservers = [
+      center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) {
+        [weak self] _ in self?.showPrivacyView(true)
+      },
+      center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) {
+        [weak self] _ in self?.showPrivacyView(UIScreen.main.isCaptured)
+      },
+      center.addObserver(forName: UIScreen.capturedDidChangeNotification, object: nil, queue: .main) {
+        [weak self] _ in self?.showPrivacyView(UIScreen.main.isCaptured)
+      },
+    ]
+    showPrivacyView(UIScreen.main.isCaptured)
+  }
+
+  private func showPrivacyView(_ visible: Bool) {
+    guard visible else {
+      privacyView?.removeFromSuperview()
+      privacyView = nil
+      return
+    }
+    guard privacyView == nil else { return }
+    let window = UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap { $0.windows }
+      .first { $0.isKeyWindow }
+    guard let window = window else { return }
+    let cover = UIVisualEffectView(effect: UIBlurEffect(style: .systemThickMaterial))
+    cover.frame = window.bounds
+    cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    window.addSubview(cover)
+    privacyView = cover
+  }
+
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    if call.method == "setScreenProtection" {
+      let secure = (call.arguments as? [String: Any])?["secureWindow"] as? Bool ?? false
+      DispatchQueue.main.async {
+        self.setPrivacyCover(enabled: secure)
+        result(true)
+      }
+      return
+    }
     guard call.method == "scan" else {
       result(FlutterMethodNotImplemented)
       return
@@ -107,7 +175,7 @@ final class AntiVirtualScanner {
   private static let allSignals = [
     "vpn", "proxy", "mockLocation", "virtualCamera", "developerOptions", "adb",
     "clockTampering", "untrustedInstaller", "signatureMismatch", "accessibilityAbuse",
-    "remoteControlApp", "clonedApp", "userCertificates", "sideloaded", "emulator", "rooted", "hooked", "debugger",
+    "remoteControlApp", "clonedApp", "userCertificates", "sideloaded", "emulator", "rooted", "hooked", "debugger", "screenCapture",
   ]
 
   func scan(wanted: Set<String>?, maxSkewMs: Int64, trustedMs: Int64?) -> [String: Any] {
@@ -125,6 +193,7 @@ final class AntiVirtualScanner {
       case "rooted": out[signal] = jailbroken().map
       case "hooked": out[signal] = hooked().map
       case "debugger": out[signal] = debugger().map
+      case "screenCapture": out[signal] = screenCapture().map
       default: out[signal] = Detection.unsupported.map  // Android-only concepts.
       }
     }
@@ -360,6 +429,17 @@ final class AntiVirtualScanner {
       return .of(["process is being traced"])
     }
     return .of([])
+  }
+
+  private func screenCapture() -> Detection {
+    // UIKit state is read on the main thread; the scan runs on a worker queue.
+    var details: [String] = []
+    let read = {
+      if UIScreen.main.isCaptured { details.append("screen is being recorded or mirrored") }
+      if UIScreen.screens.count > 1 { details.append("external display connected") }
+    }
+    if Thread.isMainThread { read() } else { DispatchQueue.main.sync(execute: read) }
+    return .of(details)
   }
 
   private func sideloaded() -> Detection {

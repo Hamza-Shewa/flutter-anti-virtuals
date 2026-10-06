@@ -80,6 +80,8 @@ class AntiVirtualMessages {
           'A hooking or instrumentation tool was detected in this app. Remove it to continue.',
       AntiVirtualSignal.debugger:
           'A debugger is attached to this app. Detach it to continue.',
+      AntiVirtualSignal.screenCapture:
+          'The screen is being recorded or mirrored. Stop it to continue.',
       AntiVirtualSignal.developerOptions: 'Developer options are turned on.',
       AntiVirtualSignal.adb: 'USB or wireless debugging is turned on.',
       AntiVirtualSignal.clockTampering:
@@ -122,6 +124,8 @@ class AntiVirtualMessages {
           'تم اكتشاف أداة حقن أو تتبّع في هذا التطبيق. أزلها للمتابعة.',
       AntiVirtualSignal.debugger:
           'يوجد مصحّح أخطاء متصل بهذا التطبيق. افصله للمتابعة.',
+      AntiVirtualSignal.screenCapture:
+          'يتم تسجيل الشاشة أو عرضها على شاشة أخرى. أوقف ذلك للمتابعة.',
       AntiVirtualSignal.developerOptions: 'خيارات المطوّر مفعّلة.',
       AntiVirtualSignal.adb: 'تصحيح أخطاء USB أو اللاسلكي مفعّل.',
       AntiVirtualSignal.clockTampering:
@@ -163,6 +167,8 @@ class AntiVirtualMessages {
           "Un outil d'instrumentation ou de hooking a été détecté dans cette application. Supprimez-le pour continuer.",
       AntiVirtualSignal.debugger:
           "Un débogueur est attaché à cette application. Détachez-le pour continuer.",
+      AntiVirtualSignal.screenCapture:
+          "L'écran est enregistré ou diffusé. Arrêtez-le pour continuer.",
       AntiVirtualSignal.developerOptions:
           'Les options pour les développeurs sont activées.',
       AntiVirtualSignal.adb: 'Le débogage USB ou sans fil est activé.',
@@ -206,6 +212,8 @@ class AntiVirtualMessages {
           'Se detectó una herramienta de hooking o instrumentación en esta aplicación. Elimínala para continuar.',
       AntiVirtualSignal.debugger:
           'Hay un depurador conectado a esta aplicación. Desconéctalo para continuar.',
+      AntiVirtualSignal.screenCapture:
+          'La pantalla se está grabando o duplicando. Detenlo para continuar.',
       AntiVirtualSignal.developerOptions:
           'Las opciones de desarrollador están activadas.',
       AntiVirtualSignal.adb: 'La depuración USB o inalámbrica está activada.',

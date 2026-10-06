@@ -127,6 +127,60 @@ void main() {
     });
   });
 
+  group('screen protection', () {
+    const channel = MethodChannel('flutter_anti_virtuals');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final calls = <MethodCall>[];
+
+    setUp(() {
+      calls.clear();
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return true;
+      });
+    });
+
+    test(
+      'protectScreen sends the options, unprotectScreen turns all off',
+      () async {
+        expect(await FlutterAntiVirtuals.instance.protectScreen(), isTrue);
+        expect(calls.single.method, 'setScreenProtection');
+        expect(calls.single.arguments, {
+          'secureWindow': true,
+          'filterObscuredTouches': true,
+          'hideOverlayWindows': true,
+        });
+        await FlutterAntiVirtuals.instance.protectScreen(
+          const ScreenProtectionOptions(hideOverlayWindows: false),
+        );
+        expect(calls.last.arguments, containsPair('hideOverlayWindows', false));
+        await FlutterAntiVirtuals.instance.unprotectScreen();
+        expect(calls.last.arguments, {
+          'secureWindow': false,
+          'filterObscuredTouches': false,
+          'hideOverlayWindows': false,
+        });
+      },
+    );
+
+    test('options compare by value', () {
+      expect(const ScreenProtectionOptions(), const ScreenProtectionOptions());
+      expect(
+        const ScreenProtectionOptions().hashCode,
+        const ScreenProtectionOptions().hashCode,
+      );
+      expect(
+        const ScreenProtectionOptions(secureWindow: false),
+        isNot(const ScreenProtectionOptions()),
+      );
+    });
+
+    test('a platform without the protection reports false', () async {
+      expect(await _SilentPlatform().setScreenProtection(null), isFalse);
+    });
+  });
+
   test('platforms without live monitoring never emit', () async {
     final platform = _SilentPlatform();
     expect(await platform.environmentChanges.toList(), isEmpty);
@@ -257,6 +311,13 @@ void main() {
             .onlyChecking(AntiVirtualSignal.emulator)
             .toMap()['signals'],
         ['emulator'],
+      );
+      expect(ScanOptions(checkScreenCapture: false), isNot(ScanOptions()));
+      expect(
+        ScanOptions()
+            .onlyChecking(AntiVirtualSignal.screenCapture)
+            .toMap()['signals'],
+        ['screenCapture'],
       );
       expect(ScanOptions(checkHooked: false), isNot(ScanOptions()));
       expect(ScanOptions(checkDebugger: false), isNot(ScanOptions()));

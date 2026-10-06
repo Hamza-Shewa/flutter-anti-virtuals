@@ -2,6 +2,8 @@ package dev.shewa.flutter_anti_virtuals
 
 import android.content.Context
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -10,10 +12,13 @@ import io.flutter.plugin.common.MethodChannel.Result
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-class FlutterAntiVirtualsPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHandler {
+class FlutterAntiVirtualsPlugin : FlutterPlugin, ActivityAware, MethodCallHandler, EventChannel.StreamHandler {
     private lateinit var channel: MethodChannel
     private lateinit var changes: EventChannel
     private var watcher: NetworkWatcher? = null
+    private var displays: DisplayWatcher? = null
+    private var sink: EventChannel.EventSink? = null
+    private val protector = ScreenProtector()
     private lateinit var context: Context
     private var worker: ExecutorService? = null
     private val mainHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
@@ -28,7 +33,9 @@ class FlutterAntiVirtualsPlugin : FlutterPlugin, MethodCallHandler, EventChannel
     }
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+        sink = events
         watcher?.stop()
+        displays?.stop()
         val next = NetworkWatcher(context) { events.success("network") }
         try {
             next.start()
@@ -37,12 +44,32 @@ class FlutterAntiVirtualsPlugin : FlutterPlugin, MethodCallHandler, EventChannel
             next.stop()
             events.error("watch_failed", e.message, null)
         }
+        // Casting or a cable display starting is as relevant as a VPN starting.
+        try {
+            displays = DisplayWatcher(context, mainHandler) { events.success("capture") }.also { it.start() }
+        } catch (_: Throwable) {
+        }
     }
 
     override fun onCancel(arguments: Any?) {
+        sink = null
         watcher?.stop()
         watcher = null
+        displays?.stop()
+        displays = null
     }
+
+    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        protector.attach(binding.activity) { sink?.success("capture") }
+    }
+
+    override fun onDetachedFromActivityForConfigChanges() = protector.detach()
+
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+        protector.attach(binding.activity) { sink?.success("capture") }
+    }
+
+    override fun onDetachedFromActivity() = protector.detach()
 
     @Suppress("UNCHECKED_CAST")
     override fun onMethodCall(call: MethodCall, result: Result) {
@@ -60,6 +87,10 @@ class FlutterAntiVirtualsPlugin : FlutterPlugin, MethodCallHandler, EventChannel
                     mainHandler.post { result.success(report) }
                 }
             }
+            "setScreenProtection" -> {
+                val config = ScreenProtectionConfig.from(call.arguments as? Map<String, Any?>)
+                result.success(protector.apply(config))
+            }
             else -> result.notImplemented()
         }
     }
@@ -69,6 +100,8 @@ class FlutterAntiVirtualsPlugin : FlutterPlugin, MethodCallHandler, EventChannel
         changes.setStreamHandler(null)
         watcher?.stop()
         watcher = null
+        displays?.stop()
+        displays = null
         worker?.shutdown()
         worker = null
     }
