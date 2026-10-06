@@ -1,6 +1,6 @@
 name: flutter_anti_virtuals
 description: "Detects VPNs, proxies, mock location, virtual cameras and other tampered or virtualized environments on Android and iOS."
-version: 0.0.1
+version: 0.1.0
 repository: https://github.com/Hamza-Shewa/flutter-anti-virtuals
 issue_tracker: https://github.com/Hamza-Shewa/flutter-anti-virtuals/issues
 topics:

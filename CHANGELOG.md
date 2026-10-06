@@ -1,10 +1,4 @@
-## 0.0.1
-
-* Initial release: scan API with VPN, proxy, mock location, virtual camera,
-  developer options, ADB, clock, installer, signature, accessibility, remote
-  control, clone, user CA and sideload signals.
-
-## Unreleased
+## 0.1.0
 
 * Android file checks (root, hooking and emulator files) now look through two
   layers: `java.io.File` and a direct `Os.stat` system call. A path found by
@@ -94,3 +88,9 @@
 * Fix: Android `mockLocation` ignores mock fixes older than two minutes. The
   last fix of a provider is cached, so a mock location that had been switched
   off kept the device flagged (and the app blocked) for several minutes.
+
+## 0.0.1
+
+* Initial release: scan API with VPN, proxy, mock location, virtual camera,
+  developer options, ADB, clock, installer, signature, accessibility, remote
+  control, clone, user CA and sideload signals.
