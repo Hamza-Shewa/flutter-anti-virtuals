@@ -35,12 +35,13 @@ typedef AntiVirtualBlockedBuilder = Widget Function(
 /// ```
 ///
 /// The wrapped app is not built until the first scan is clean (unless
-/// [waitForScan] is false). Once built it stays mounted so its state survives,
-/// but while blocked it is hidden, loses focus and has its animations paused.
-/// Code that runs outside the widget tree (`main()`, network calls the app
-/// already started) is not stopped. The Android back button still reaches the
-/// hidden app (a guard above the `Navigator` cannot intercept it); set
-/// [unmountWhileBlocked] to remove the app from the tree while blocked.
+/// [waitForScan] is false). While blocked it is removed from the tree, so the
+/// Android back button and deep links cannot reach it (a guard above the
+/// `Navigator` cannot intercept them), and it is rebuilt with fresh state when
+/// the block clears. Set [unmountWhileBlocked] to false to keep it mounted
+/// (state survives, but it is only hidden, loses focus and has its animations
+/// paused). Code that runs outside the widget tree (`main()`, network calls
+/// the app already started) is not stopped.
 ///
 /// If the very first scan fails, [onError] is called and the app is let
 /// through (fail open) unless [failClosed] is set. A failed rescan keeps the
@@ -63,7 +64,7 @@ class AntiVirtualGuard extends StatefulWidget {
     this.rescanDebounce = const Duration(seconds: 3),
     this.rescanInterval,
     this.failClosed = false,
-    this.unmountWhileBlocked = false,
+    this.unmountWhileBlocked = true,
     this.onReport,
     this.onError,
     @visibleForTesting this.exitApp,
@@ -154,9 +155,10 @@ class AntiVirtualGuard extends StatefulWidget {
   /// rescan keeps the previous result.
   final bool failClosed;
 
-  /// Remove the app from the tree while blocked instead of only hiding it, so
-  /// it cannot react to the back button or deep links. Its state is lost and
-  /// it is rebuilt when the block clears.
+  /// Remove the app from the tree while blocked (the default) instead of only
+  /// hiding it, so it cannot react to the back button or deep links. Its state
+  /// is lost and it is rebuilt when the block clears. Pass false to keep it
+  /// mounted and preserve its state.
   final bool unmountWhileBlocked;
 
   /// Called with every completed scan, blocking or not. Exceptions thrown here
@@ -180,7 +182,7 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
   bool _scanned = false;
   bool _failed = false;
   // Sticky: once the app has been allowed into the tree it stays mounted
-  // (unless [unmountWhileBlocked]).
+  // while blocked only when [unmountWhileBlocked] is false.
   bool _childAllowed = false;
   bool _inFlight = false;
   bool _rescanQueued = false;

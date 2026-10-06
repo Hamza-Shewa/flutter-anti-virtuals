@@ -51,13 +51,14 @@ MaterialApp(
 | `rescanOnResume` | `true` | Scan again when the app returns to the foreground. Coming back from the background always rescans; a shorter interruption (notification shade, quick settings, Control Center, permission dialog) rescans when the last scan is older than `rescanDebounce` (3 seconds), so a VPN switched on from quick settings is caught. If the problem is gone the app is shown again and the exit is cancelled |
 | `rescanInterval` | `null` | Also scan this often while in the foreground |
 | `failClosed` | `false` | Block when a scan fails. The built-in screen then says the device could not be verified and `blockedBuilder` gets an empty list. Without it a failing first scan lets the app through and a failed rescan keeps the previous result, so backgrounding the app cannot be used to clear a block |
-| `unmountWhileBlocked` | `false` | Remove the app from the tree while blocked (its state is lost). Without it the Android back button still reaches the hidden app, because a widget above the `Navigator` cannot intercept it |
+| `unmountWhileBlocked` | `true` | Remove the app from the tree while blocked, so the Android back button and deep links cannot reach it (a widget above the `Navigator` cannot intercept them). Its state is lost and it is rebuilt when the block clears. Pass `false` to keep it mounted and hidden instead |
 | `hardExit` | `false` | Android: end the process with `exit(0)` instead of `SystemNavigator.pop()` |
 | `onReport`, `onError` | none | Every completed scan; scan failures (reported through `FlutterError.reportError` when `onError` is not set) |
 
-The app is not built until the first scan is clean. Once built it stays
-mounted (its state is kept), but while blocked it is hidden, loses focus and
-has its animations paused. Code outside the widget tree (`main()`, network
+The app is not built until the first scan is clean. While blocked it is
+removed from the tree and rebuilt with fresh state when the block clears; with
+`unmountWhileBlocked: false` it stays mounted (state kept) but hidden, without
+focus and with animations paused. Code outside the widget tree (`main()`, network
 calls already started) is not stopped. Changing `options`, `blockOn` or
 `forceExit` later takes effect.
 

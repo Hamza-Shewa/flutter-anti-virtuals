@@ -21,3 +21,5 @@
   `rescanInterval`, `unmountWhileBlocked` and `hardExit` options; the countdown
   restarts after a background trip even without a rescan; `copyWith` keeps
   `textDirection`; the screen follows device locale changes.
+* Guard: `unmountWhileBlocked` is `true` by default, so a blocked app cannot be
+  reached with the back button; pass `false` to keep it mounted and keep state.

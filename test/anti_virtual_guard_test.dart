@@ -344,6 +344,7 @@ void main() {
       await tester.pumpWidget(
         app(
           AntiVirtualGuard(
+            unmountWhileBlocked: false,
             child: Scaffold(body: TextField(focusNode: focus)),
           ),
         ),
@@ -710,13 +711,12 @@ void main() {
       expect(find.text(AntiVirtualMessages.french.title), findsOneWidget);
     });
 
-    testWidgets('unmountWhileBlocked removes the app and restores it', (
+    testWidgets('the app is removed while blocked by default and restored', (
       tester,
     ) async {
       await tester.pumpWidget(
         app(
           const AntiVirtualGuard(
-            unmountWhileBlocked: true,
             rescanDebounce: Duration.zero,
             child: appChild,
           ),
@@ -734,6 +734,27 @@ void main() {
       goForeground(tester);
       await tester.pump();
       expect(find.byKey(appKey), findsOneWidget);
+    });
+
+    testWidgets('unmountWhileBlocked: false keeps the app mounted', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        app(
+          const AntiVirtualGuard(
+            unmountWhileBlocked: false,
+            rescanDebounce: Duration.zero,
+            child: appChild,
+          ),
+        ),
+      );
+      await tester.pump();
+      platform.detected = {AntiVirtualSignal.vpn};
+      goBackground(tester);
+      goForeground(tester);
+      await tester.pump();
+      expect(find.byKey(appKey), findsNothing);
+      expect(find.byKey(appKey, skipOffstage: false), findsOneWidget);
     });
 
     testWidgets('waitForScan switched off mid-scan shows the app', (
