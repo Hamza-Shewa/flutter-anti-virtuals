@@ -424,3 +424,27 @@ internal class CaptureRulesTest {
         )
     }
 }
+
+internal class DeviceKeyRulesTest {
+    @Test
+    fun theChallengeIsTheSha256OfTheNonce() {
+        // sha256("abc")
+        val expected = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        assertEquals(expected, DeviceKeyRules.challenge("abc").joinToString("") { "%02x".format(it) })
+        assertEquals(32, DeviceKeyRules.challenge("x".repeat(500)).size)
+    }
+
+    @Test
+    fun aSelfSignedLeafIsNotAnAttestation() {
+        assertFalse(DeviceKeyRules.isAttested(0))
+        assertFalse(DeviceKeyRules.isAttested(1))
+        assertTrue(DeviceKeyRules.isAttested(3))
+    }
+
+    @Test
+    fun protectionPrefersTheStrongestLevel() {
+        assertEquals("strongBox", DeviceKeyRules.protection(strongBox = true, hardware = true))
+        assertEquals("hardware", DeviceKeyRules.protection(strongBox = false, hardware = true))
+        assertEquals("software", DeviceKeyRules.protection(strongBox = false, hardware = false))
+    }
+}

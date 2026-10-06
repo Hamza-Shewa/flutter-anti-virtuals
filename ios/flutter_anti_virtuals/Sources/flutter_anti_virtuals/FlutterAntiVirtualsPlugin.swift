@@ -5,6 +5,7 @@ import Flutter
 import Foundation
 import MachO
 import Network
+import Security
 import UIKit
 
 public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
@@ -138,6 +139,24 @@ public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHa
       DispatchQueue.main.async {
         self.setPrivacyCover(enabled: secure)
         result(true)
+      }
+      return
+    }
+    if call.method == "signPayload" {
+      guard let args = call.arguments as? [String: Any], let payload = args["payload"] as? String
+      else {
+        result(FlutterError(code: "bad_arguments", message: "nonce and payload are required", details: nil))
+        return
+      }
+      worker.async {
+        let signed = DeviceKey.sign(Data(payload.utf8))
+        DispatchQueue.main.async {
+          switch signed {
+          case .success(let map): result(map)
+          case .failure(let error):
+            result(FlutterError(code: "sign_failed", message: error.message, details: nil))
+          }
+        }
       }
       return
     }
@@ -453,5 +472,61 @@ final class AntiVirtualScanner {
       }
       return .of([])
     #endif
+  }
+}
+
+struct DeviceKeyError: Error {
+  let message: String
+}
+
+/// Signs a payload with a key created for this request. The Secure Enclave is used where it
+/// exists; the Simulator falls back to a software key, reported as such. iOS has no key
+/// attestation, so the signature alone does not prove the device: pair it with App Attest.
+enum DeviceKey {
+  static func sign(_ payload: Data) -> Result<[String: Any], DeviceKeyError> {
+    var protection = "hardware"
+    var key = makeKey(secureEnclave: true)
+    if key == nil {
+      protection = "software"
+      key = makeKey(secureEnclave: false)
+    }
+    guard let privateKey = key, let publicKey = SecKeyCopyPublicKey(privateKey) else {
+      return .failure(DeviceKeyError(message: "could not create a signing key"))
+    }
+    var error: Unmanaged<CFError>?
+    guard
+      let signature = SecKeyCreateSignature(
+        privateKey, .ecdsaSignatureMessageX962SHA256, payload as CFData, &error) as Data?,
+      let publicData = SecKeyCopyExternalRepresentation(publicKey, &error) as Data?
+    else {
+      let reason = error?.takeRetainedValue().localizedDescription ?? "signing failed"
+      return .failure(DeviceKeyError(message: reason))
+    }
+    return .success([
+      "signature": signature.base64EncodedString(),
+      "publicKey": publicData.base64EncodedString(),
+      "algorithm": "SHA256withECDSA",
+      "protection": protection,
+      "attested": false,
+      "certificateChain": [String](),
+    ])
+  }
+
+  private static func makeKey(secureEnclave: Bool) -> SecKey? {
+    var attributes: [String: Any] = [
+      kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+      kSecAttrKeySizeInBits as String: 256,
+    ]
+    var privateAttributes: [String: Any] = [kSecAttrIsPermanent as String: false]
+    if secureEnclave {
+      guard
+        let access = SecAccessControlCreateWithFlags(
+          nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, .privateKeyUsage, nil)
+      else { return nil }
+      attributes[kSecAttrTokenID as String] = kSecAttrTokenIDSecureEnclave
+      privateAttributes[kSecAttrAccessControl as String] = access
+    }
+    attributes[kSecPrivateKeyAttrs as String] = privateAttributes
+    return SecKeyCreateRandomKey(attributes as CFDictionary, nil)
   }
 }

@@ -6,6 +6,12 @@
 
 ## Unreleased
 
+* `FlutterAntiVirtuals.instance.verify(nonce: ...)` returns a `SignedReport`: a
+  scan bound to a backend-issued nonce and signed with a key created on the
+  device for that request (Android Keystore EC key attested with the SHA-256 of
+  the nonce as challenge, StrongBox then TEE, falling back to no attestation;
+  iOS Secure Enclave key, software on the Simulator). `toJson()` is what to send
+  to the backend; `doc/server-verification.md` lists what it must check.
 * Screen protection. `FlutterAntiVirtuals.instance.protectScreen()` /
   `unprotectScreen()` and `AntiVirtualGuard(protectScreen: ...)`: Android sets
   `FLAG_SECURE` (no screenshots, recording or casting, blank recents

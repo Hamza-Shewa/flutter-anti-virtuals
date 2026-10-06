@@ -1,7 +1,11 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
+
 import 'flutter_anti_virtuals_platform_interface.dart';
 import 'src/report.dart';
 import 'src/scan_options.dart';
 import 'src/screen_protection.dart';
+import 'src/signed_report.dart';
 import 'src/signal.dart';
 
 export 'src/guard/anti_virtual_guard.dart';
@@ -9,6 +13,7 @@ export 'src/guard/messages.dart';
 export 'src/report.dart';
 export 'src/scan_options.dart';
 export 'src/screen_protection.dart';
+export 'src/signed_report.dart';
 export 'src/signal.dart';
 
 /// Detects virtualized, spoofed and tampered environments.
@@ -23,6 +28,50 @@ class FlutterAntiVirtuals {
   /// failed scan rather than a clean device.
   Future<AntiVirtualReport> scan([ScanOptions? options]) =>
       FlutterAntiVirtualsPlatform.instance.scan(options ?? ScanOptions());
+
+  /// Scans, then signs the result together with [nonce] so a backend can
+  /// check it instead of trusting the app. [nonce] must be a fresh value the
+  /// backend issued for this request (at least 16 characters), otherwise the
+  /// report can be replayed. See [SignedReport] for what the backend must
+  /// verify, and call this right before the sensitive action, not at startup.
+  ///
+  /// Throws an [ArgumentError] for a short [nonce]; native failures propagate
+  /// as `PlatformException` and must be treated as an unverified device.
+  Future<SignedReport> verify({
+    required String nonce,
+    ScanOptions? options,
+  }) async {
+    if (nonce.length < 16) {
+      throw ArgumentError.value(
+        nonce,
+        'nonce',
+        'must be at least 16 characters, issued by your backend',
+      );
+    }
+    final report = await scan(options);
+    final issuedAt = DateTime.now().toUtc();
+    final platform = defaultTargetPlatform == TargetPlatform.iOS
+        ? 'iOS'
+        : 'android';
+    final payload = SignedReport.encodePayload(
+      nonce: nonce,
+      issuedAt: issuedAt,
+      platform: platform,
+      report: report,
+    );
+    final signature = await FlutterAntiVirtualsPlatform.instance.signPayload(
+      nonce,
+      payload,
+    );
+    return SignedReport(
+      nonce: nonce,
+      issuedAt: issuedAt,
+      platform: platform,
+      payload: payload,
+      signature: signature,
+      report: report,
+    );
+  }
 
   /// Emits when the network setup changes in a way that can turn a VPN or
   /// proxy on or off (Android: `ConnectivityManager` callbacks for VPN

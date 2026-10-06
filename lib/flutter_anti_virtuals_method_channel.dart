@@ -7,6 +7,7 @@ import 'flutter_anti_virtuals_platform_interface.dart';
 import 'src/report.dart';
 import 'src/scan_options.dart';
 import 'src/screen_protection.dart';
+import 'src/signed_report.dart';
 
 class MethodChannelFlutterAntiVirtuals extends FlutterAntiVirtualsPlatform {
   @visibleForTesting
@@ -38,6 +39,15 @@ class MethodChannelFlutterAntiVirtuals extends FlutterAntiVirtualsPlatform {
           .toMap(),
     );
     return applied ?? false;
+  }
+
+  @override
+  Future<DeviceSignature> signPayload(String nonce, String payload) async {
+    final raw = await methodChannel.invokeMapMethod<Object?, Object?>(
+      'signPayload',
+      <String, Object?>{'nonce': nonce, 'payload': payload},
+    );
+    return DeviceSignature.fromMap(raw ?? const <Object?, Object?>{});
   }
 
   // One shared stream: an event channel has a single message handler, so a

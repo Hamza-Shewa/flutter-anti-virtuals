@@ -103,6 +103,25 @@ It also stops your own users from taking screenshots, so it is off by default.
 The plugin declares the `HIDE_OVERLAY_WINDOWS` and `DETECT_SCREEN_RECORDING`
 permissions; both are normal permissions granted at install.
 
+## Verify before a sensitive action
+
+A client-side scan can be faked by whoever controls the device. `verify()` runs
+a scan right now, binds it to a nonce your backend issued and signs it with a
+key created on the device for that request:
+
+```dart
+final nonce = await api.issueNonce();          // single use, from your server
+final signed = await FlutterAntiVirtuals.instance.verify(nonce: nonce);
+await api.transfer(amount, attestation: signed.toJson());
+```
+
+On Android the key is attested by the secure hardware (StrongBox or TEE) with
+the SHA-256 of the nonce as challenge, so your server can prove the request is
+live, comes from a locked, verified-boot device and from your release-signed
+app. iOS signs with a Secure Enclave key; bind it to App Attest for device
+proof. What the server has to check is in
+[`doc/server-verification.md`](doc/server-verification.md).
+
 ## Choosing checks
 
 `ScanOptions` has one boolean per signal (`checkVpn`, `checkProxy`,
