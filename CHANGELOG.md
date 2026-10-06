@@ -23,3 +23,7 @@
   `textDirection`; the screen follows device locale changes.
 * Guard: `unmountWhileBlocked` is `true` by default, so a blocked app cannot be
   reached with the back button; pass `false` to keep it mounted and keep state.
+* Live detection: `FlutterAntiVirtuals.environmentChanges` emits when a VPN or
+  proxy may have been switched on or off (Android `ConnectivityManager`
+  callbacks, iOS `NWPathMonitor`), and `AntiVirtualGuard` rescans on it
+  (`liveMonitoring`, `liveDebounce`).

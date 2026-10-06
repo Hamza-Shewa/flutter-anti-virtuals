@@ -49,6 +49,8 @@ MaterialApp(
 | `forceExitAfter` | 5 seconds | Delay before the app exits. The built-in screen shows a countdown |
 | `waitForScan` / `loadingBuilder` | `true` | The app is not built until the first scan is clean |
 | `rescanOnResume` | `true` | Scan again when the app returns to the foreground. Coming back from the background always rescans; a shorter interruption (notification shade, quick settings, Control Center, permission dialog) rescans when the last scan is older than `rescanDebounce` (3 seconds), so a VPN switched on from quick settings is caught. If the problem is gone the app is shown again and the exit is cancelled |
+| `liveMonitoring` | `true` | Scan as soon as the network changes, so a VPN or proxy switched on while the app is in front is caught right away. Android listens to `ConnectivityManager` for VPN transport and proxy changes, iOS to `NWPathMonitor`. A change while the app is in the background is covered by the rescan on resume. Mock location and cameras have no change notification, so they wait for the next rescan. iOS does not report a changed proxy setting live |
+| `liveDebounce` | 500 ms | Wait after a change before scanning, so a burst of changes (a VPN coming up) causes one scan |
 | `rescanInterval` | `null` | Also scan this often while in the foreground |
 | `failClosed` | `false` | Block when a scan fails. The built-in screen then says the device could not be verified and `blockedBuilder` gets an empty list. Without it a failing first scan lets the app through and a failed rescan keeps the previous result, so backgrounding the app cannot be used to clear a block |
 | `unmountWhileBlocked` | `true` | Remove the app from the tree while blocked, so the Android back button and deep links cannot reach it (a widget above the `Navigator` cannot intercept them). Its state is lost and it is rebuilt when the block clears. Pass `false` to keep it mounted and hidden instead |
@@ -68,6 +70,11 @@ Store. It is off by default. On Android it calls `SystemNavigator.pop()`,
 which finishes the activity but can leave the process running (or return to
 the previous activity); set `hardExit` to end the process. On iOS it calls
 `exit(0)`.
+
+The stream behind it is public: `FlutterAntiVirtuals.instance.environmentChanges`
+emits when the network setup changes (it carries no data, call `scan()` to find
+out what changed) and nothing for the state that exists when you start
+listening.
 
 ## Choosing checks
 

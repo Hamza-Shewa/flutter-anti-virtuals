@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_anti_virtuals/flutter_anti_virtuals.dart';
 import 'package:flutter_anti_virtuals/flutter_anti_virtuals_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +13,10 @@ class _FakePlatform extends FlutterAntiVirtualsPlatform
   Object? error;
   int scans = 0;
   Completer<void>? gate;
+  final changes = StreamController<void>.broadcast(sync: true);
+
+  @override
+  Stream<void> get environmentChanges => changes.stream;
 
   @override
   Future<AntiVirtualReport> scan(ScanOptions options) async {
@@ -755,6 +760,133 @@ void main() {
       await tester.pump();
       expect(find.byKey(appKey), findsNothing);
       expect(find.byKey(appKey, skipOffstage: false), findsOneWidget);
+    });
+
+    group('live monitoring', () {
+      Future<void> settle(WidgetTester tester) =>
+          tester.pump(const Duration(milliseconds: 600));
+
+      testWidgets('a VPN switched on in the foreground blocks the app', (
+        tester,
+      ) async {
+        await tester.pumpWidget(app(const AntiVirtualGuard(child: appChild)));
+        await tester.pump();
+        expect(find.byKey(appKey), findsOneWidget);
+        expect(platform.scans, 1);
+
+        platform.detected = {AntiVirtualSignal.vpn};
+        platform.changes.add(null);
+        await settle(tester);
+        expect(platform.scans, 2);
+        expect(find.byKey(appKey, skipOffstage: false), findsNothing);
+        expect(find.text(AntiVirtualMessages.english.title), findsOneWidget);
+
+        platform.detected = {};
+        platform.changes.add(null);
+        await settle(tester);
+        expect(find.byKey(appKey), findsOneWidget);
+      });
+
+      testWidgets('a burst of changes causes one scan', (tester) async {
+        await tester.pumpWidget(app(const AntiVirtualGuard(child: appChild)));
+        await tester.pump();
+        for (var i = 0; i < 5; i++) {
+          platform.changes.add(null);
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        await settle(tester);
+        expect(platform.scans, 2);
+      });
+
+      testWidgets('liveDebounce is adjustable', (tester) async {
+        await tester.pumpWidget(
+          app(
+            const AntiVirtualGuard(
+              liveDebounce: Duration(seconds: 2),
+              child: appChild,
+            ),
+          ),
+        );
+        await tester.pump();
+        platform.changes.add(null);
+        await settle(tester);
+        expect(platform.scans, 1);
+        await tester.pump(const Duration(seconds: 2));
+        expect(platform.scans, 2);
+      });
+
+      testWidgets('liveMonitoring: false ignores changes', (tester) async {
+        await tester.pumpWidget(
+          app(const AntiVirtualGuard(liveMonitoring: false, child: appChild)),
+        );
+        await tester.pump();
+        platform.changes.add(null);
+        await settle(tester);
+        expect(platform.scans, 1);
+        expect(platform.changes.hasListener, isFalse);
+      });
+
+      testWidgets('changes in the background wait for the resume rescan', (
+        tester,
+      ) async {
+        await tester.pumpWidget(app(const AntiVirtualGuard(child: appChild)));
+        await tester.pump();
+        goBackground(tester);
+        platform.changes.add(null);
+        await settle(tester);
+        expect(platform.scans, 1);
+        goForeground(tester);
+        await tester.pump();
+        expect(platform.scans, 2);
+      });
+
+      testWidgets('a change during a scan is rescanned afterwards', (
+        tester,
+      ) async {
+        await tester.pumpWidget(app(const AntiVirtualGuard(child: appChild)));
+        await tester.pump();
+        platform.gate = Completer<void>();
+        platform.changes.add(null);
+        await settle(tester); // scan 2 starts and waits on the gate
+        platform.detected = {AntiVirtualSignal.proxy};
+        platform.changes.add(null);
+        await settle(tester); // queued, because one is running
+        platform.gate!.complete();
+        await tester.pump();
+        await tester.pump();
+        expect(platform.scans, 3);
+        expect(find.byKey(appKey, skipOffstage: false), findsNothing);
+      });
+
+      testWidgets('a missing event channel is ignored, other errors reported', (
+        tester,
+      ) async {
+        final errors = <Object>[];
+        await tester.pumpWidget(
+          app(
+            AntiVirtualGuard(
+              onError: (error, _) => errors.add(error),
+              child: appChild,
+            ),
+          ),
+        );
+        await tester.pump();
+        platform.changes.addError(MissingPluginException());
+        await tester.pump();
+        expect(errors, isEmpty);
+        platform.changes.addError(PlatformException(code: 'watch_failed'));
+        await tester.pump();
+        expect(errors.single, isA<PlatformException>());
+        expect(find.byKey(appKey), findsOneWidget);
+      });
+
+      testWidgets('stops listening when removed', (tester) async {
+        await tester.pumpWidget(app(const AntiVirtualGuard(child: appChild)));
+        await tester.pump();
+        expect(platform.changes.hasListener, isTrue);
+        await tester.pumpWidget(const SizedBox());
+        expect(platform.changes.hasListener, isFalse);
+      });
     });
 
     testWidgets('waitForScan switched off mid-scan shows the app', (

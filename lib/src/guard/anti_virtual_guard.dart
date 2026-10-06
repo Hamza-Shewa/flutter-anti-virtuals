@@ -63,6 +63,8 @@ class AntiVirtualGuard extends StatefulWidget {
     this.rescanOnResume = true,
     this.rescanDebounce = const Duration(seconds: 3),
     this.rescanInterval,
+    this.liveMonitoring = true,
+    this.liveDebounce = const Duration(milliseconds: 500),
     this.failClosed = false,
     this.unmountWhileBlocked = true,
     this.onReport,
@@ -148,6 +150,18 @@ class AntiVirtualGuard extends StatefulWidget {
   /// default) disables the periodic scan.
   final Duration? rescanInterval;
 
+  /// Scan again as soon as the network changes (a VPN or proxy switched on
+  /// while the app is in the foreground), see
+  /// [FlutterAntiVirtuals.environmentChanges]. Changes while the app is in the
+  /// background are covered by the rescan on resume. Mock location and the
+  /// camera have no change notification, so they are only seen by the other
+  /// rescans.
+  final bool liveMonitoring;
+
+  /// Waits this long after a network change before scanning, so a burst of
+  /// changes (a VPN coming up touches several networks) causes one scan.
+  final Duration liveDebounce;
+
   /// Block the app when a scan fails (first scan, or a rescan) instead of
   /// failing open. The default screen then shows
   /// [AntiVirtualMessages.scanFailed] and [blockedBuilder] receives an empty
@@ -193,6 +207,8 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
   Timer? _exitTimer;
   Timer? _tickTimer;
   Timer? _intervalTimer;
+  Timer? _liveTimer;
+  StreamSubscription<void>? _liveSubscription;
   int _remaining = 0;
 
   late ScanOptions _options = widget.options ?? ScanOptions();
@@ -205,6 +221,7 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     WidgetsBinding.instance.addObserver(this);
     _childAllowed = !widget.waitForScan;
     _syncInterval();
+    _syncLive();
     _scan();
   }
 
@@ -220,6 +237,7 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     }
     if (old.waitForScan && !widget.waitForScan) _childAllowed = true;
     if (old.rescanInterval != widget.rescanInterval) _syncInterval();
+    if (old.liveMonitoring != widget.liveMonitoring) _syncLive();
     if (changedOptions) {
       _scan();
     } else if (!setEquals(old.blockOn, widget.blockOn) ||
@@ -238,6 +256,8 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     WidgetsBinding.instance.removeObserver(this);
     _cancelExit();
     _intervalTimer?.cancel();
+    _liveTimer?.cancel();
+    _liveSubscription?.cancel();
     super.dispose();
   }
 
@@ -282,6 +302,31 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     _intervalTimer = Timer.periodic(interval, (_) {
       if (_foreground) _scan();
     });
+  }
+
+  void _syncLive() {
+    _liveTimer?.cancel();
+    _liveTimer = null;
+    _liveSubscription?.cancel();
+    _liveSubscription = null;
+    if (!widget.liveMonitoring) return;
+    _liveSubscription = FlutterAntiVirtualsPlatform.instance.environmentChanges
+        .listen(
+          (_) {
+            if (!_foreground) return; // Resume rescans after a background trip.
+            _liveTimer?.cancel();
+            _liveTimer = Timer(widget.liveDebounce, () {
+              if (mounted && _foreground) _scan();
+            });
+          },
+          // Best effort: a platform without the event channel must not break
+          // the guard, and the other rescans still run.
+          onError: (Object error, StackTrace stackTrace) {
+            if (error is! MissingPluginException) {
+              _reportError(error, stackTrace);
+            }
+          },
+        );
   }
 
   Future<void> _scan() async {

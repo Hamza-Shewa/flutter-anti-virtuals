@@ -3,15 +3,55 @@ import CFNetwork
 import CoreLocation
 import Flutter
 import Foundation
+import Network
 import UIKit
 
-public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin {
+public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
   private let worker = DispatchQueue(label: "dev.shewa.flutter_anti_virtuals")
+  private var monitor: NWPathMonitor?
+  private var lastPath: String?
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(
       name: "flutter_anti_virtuals", binaryMessenger: registrar.messenger())
-    registrar.addMethodCallDelegate(FlutterAntiVirtualsPlugin(), channel: channel)
+    let instance = FlutterAntiVirtualsPlugin()
+    registrar.addMethodCallDelegate(instance, channel: channel)
+    let changes = FlutterEventChannel(
+      name: "flutter_anti_virtuals/changes", binaryMessenger: registrar.messenger())
+    changes.setStreamHandler(instance)
+  }
+
+  // Emits when the set of network interfaces or the connectivity status changes (a VPN
+  // adds a `utun` interface). The first update only describes the current state. A
+  // changed system proxy does not produce a path update; it is caught on the next scan.
+  public func onListen(
+    withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink
+  ) -> FlutterError? {
+    monitor?.cancel()
+    lastPath = nil
+    let monitor = NWPathMonitor()
+    monitor.pathUpdateHandler = { [weak self] path in
+      let key =
+        "\(path.status)|"
+        + path.availableInterfaces.map { "\($0.name):\($0.type)" }.sorted().joined(separator: ",")
+      DispatchQueue.main.async {
+        guard let self = self else { return }
+        let previous = self.lastPath
+        self.lastPath = key
+        if let previous = previous, previous != key { events("network") }
+      }
+    }
+    monitor.start(queue: DispatchQueue(label: "dev.shewa.flutter_anti_virtuals.path"))
+    self.monitor = monitor
+    return nil
+  }
+
+  public func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    monitor?.pathUpdateHandler = nil
+    monitor?.cancel()
+    monitor = nil
+    lastPath = nil
+    return nil
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {

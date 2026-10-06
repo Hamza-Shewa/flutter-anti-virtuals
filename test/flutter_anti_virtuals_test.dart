@@ -4,6 +4,8 @@ import 'package:flutter_anti_virtuals/flutter_anti_virtuals_method_channel.dart'
 import 'package:flutter_anti_virtuals/flutter_anti_virtuals_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+class _SilentPlatform extends FlutterAntiVirtualsPlatform {}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('flutter_anti_virtuals');
@@ -29,6 +31,31 @@ void main() {
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
+  });
+
+  test('environmentChanges streams events from the event channel', () async {
+    const events = EventChannel('flutter_anti_virtuals/changes');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockStreamHandler(
+      events,
+      MockStreamHandler.inline(
+        onListen: (arguments, sink) {
+          sink.success('network');
+          sink.endOfStream();
+        },
+      ),
+    );
+    addTearDown(() => messenger.setMockStreamHandler(events, null));
+    await expectLater(
+      FlutterAntiVirtuals.instance.environmentChanges,
+      emitsInOrder([anything, emitsDone]),
+    );
+  });
+
+  test('platforms without live monitoring never emit', () async {
+    final platform = _SilentPlatform();
+    expect(await platform.environmentChanges.toList(), isEmpty);
   });
 
   test('method channel is the default instance', () {

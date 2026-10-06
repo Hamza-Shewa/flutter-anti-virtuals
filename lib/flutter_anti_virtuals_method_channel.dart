@@ -9,6 +9,13 @@ class MethodChannelFlutterAntiVirtuals extends FlutterAntiVirtualsPlatform {
   @visibleForTesting
   final methodChannel = const MethodChannel('flutter_anti_virtuals');
 
+  @visibleForTesting
+  final eventChannel = const EventChannel('flutter_anti_virtuals/changes');
+
+  @override
+  Stream<void> get environmentChanges =>
+      eventChannel.receiveBroadcastStream().map((_) {});
+
   @override
   Future<AntiVirtualReport> scan(ScanOptions options) async {
     final raw = await methodChannel.invokeMapMethod<Object?, Object?>(
