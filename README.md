@@ -24,6 +24,56 @@ if (report.hasAny({
 }
 ```
 
+## Two ways to use it
+
+1. **`scan()`**: you call it and decide what to do (below).
+2. **`AntiVirtualGuard`**: a widget that scans for you and blocks the app
+   ([next section](#block-the-app-at-startup)).
+
+Runnable versions of both are in [`example/`](example/): `scan_example.dart`,
+`guard_example.dart` and a `main.dart` that shows everything.
+
+### Using `scan()` directly
+
+```dart
+// One signal.
+final vpn = await FlutterAntiVirtuals.instance.check(AntiVirtualSignal.vpn);
+if (vpn.detected) print(vpn.details); // e.g. [VPN transport, tun0]
+```
+
+```dart
+// Decide before a sensitive action. A failed scan is not a clean device.
+Future<bool> deviceLooksSafe() async {
+  const risky = {
+    AntiVirtualSignal.rooted,
+    AntiVirtualSignal.hooked,
+    AntiVirtualSignal.mockLocation,
+    AntiVirtualSignal.vpn,
+  };
+  try {
+    final report = await FlutterAntiVirtuals.instance.scan();
+    return report.detected.intersection(risky).isEmpty;
+  } catch (_) {
+    return false; // PlatformException / MissingPluginException
+  }
+}
+```
+
+```dart
+// Only some checks, and see what fired and why.
+final report = await FlutterAntiVirtuals.instance.scan(
+  ScanOptions(checkDeveloperOptions: false, checkAdb: false),
+);
+for (final signal in report.detected) {
+  print('${signal.name}: ${report[signal]!.details.join(', ')}');
+}
+final json = report.toJson(); // send it to your server
+```
+
+A signal whose `supported` is false (for example `adb` on iOS) was not checked
+and is never counted as detected. Do not trust a client-side report for
+anything that matters: use `verify()` below and check it on your server.
+
 ## Block the app at startup
 
 `AntiVirtualGuard` runs a scan when the app starts (and again every time it
@@ -164,11 +214,6 @@ also compare the clock.
 | `userCertificates` | yes | no | User-installed CA certificates |
 | `sideloaded` | no | yes | Embedded provisioning profile present |
 
-`flutter_defender` has none of: `mockLocation`, `virtualCamera`,
-`developerOptions`, `adb`, `clockTampering`, `untrustedInstaller`,
-`signatureMismatch`, `accessibilityAbuse`, `remoteControlApp`, `clonedApp`,
-`userCertificates`, `sideloaded`.
-
 `emulator` is not in `AntiVirtualGuard.defaultBlockingSignals`, so the guard
 does not block your own emulator or Simulator while you develop. Block it in
 release builds only:
@@ -206,21 +251,40 @@ for anything that matters.
 
 ## Limits
 
-See [`doc/hardening.md`](doc/hardening.md) for obfuscation and for what the
-checks cannot stop.
+What the plugin checks on the device now includes root and jailbreak, hooking
+frameworks (Frida, Xposed and friends), debuggers, emulators, screen capture
+and the other signals above. These are the limits that remain:
 
-Every check runs on the device, so a rooted device or a hooked app can lie.
-Treat the report as a signal and verify important actions on your server,
-ideally with Play Integrity / App Attest. Package lists are best effort and
-need updating; mock-location and camera spoofing that works through hooks is
-not visible to these checks.
-
-For mock-location results to include `isMock`, the host app needs location
-permission already granted; the plugin never asks for it.
-Android keeps the last fix of every location provider, so a mock fix would
-stay visible long after the spoofing app stopped. Only fixes younger than two
-minutes count; a running mock app injects one about every second. Android also
-only hands out last-known locations while the app is in the foreground.
+* **A local check can be defeated by a determined attacker.** Root-hiding tools
+  (Magisk's Zygisk DenyList, Shamiko, jailbreak-detection bypass tweaks) and a
+  renamed or custom Frida build remove the evidence the checks look for, and a
+  hook installed before the plugin loads can lie about what the process reads.
+  A detection is strong evidence, a clean result is not proof. For anything that
+  matters, call `verify()` with `AttestationOptions` and check the result on
+  your server (Play Integrity, hardware key attestation, App Attest), see
+  [`doc/server-verification.md`](doc/server-verification.md) and
+  [`doc/hardening.md`](doc/hardening.md).
+* **iOS reports fewer signals than Android** (no developer options, ADB,
+  installer, signature, accessibility, remote-control, clone or user-CA checks),
+  has no key attestation (use App Attest) and App Attest does not work on the
+  Simulator. The Swift code is compiled in CI on every change but has not yet been
+  tested on a physical iPhone.
+* **Not every change is seen live.** `AntiVirtualGuard` reacts at once to VPN
+  and proxy changes and to screen capture, but mock location, cameras and the
+  iOS proxy setting wait for the next rescan. Screen recording is only visible
+  to Android 15 and later, and casting through a private virtual display is not
+  visible to older versions.
+* **Package lists are best effort** (mock location, remote control, cloners,
+  root managers, hooking apps) and need updating as new tools appear.
+  Mock-location and camera spoofing that works through hooks is not visible to
+  these checks.
+* **Mock-location results** need location permission already granted; the
+  plugin never asks for it. Android keeps the last fix of every provider, so
+  only fixes younger than two minutes count (a running mock app injects one
+  about every second), and Android only hands out last-known locations while
+  the app is in the foreground.
+* **Play Integrity** needs Google Play services on the device and has a daily
+  quota per project; request it before sensitive actions, not on every launch.
 
 ## License
 

@@ -1,5 +1,9 @@
 ## 0.1.0
 
+* Docs: README sections for using `scan()` directly and for the guard, a rewritten
+  *Limits* section that reflects the checks that now exist (root, hooks,
+  debugger, emulator, screen capture) and the limits that remain, and two new
+  runnable examples (`scan_example.dart`, `guard_example.dart`).
 * Android file checks (root, hooking and emulator files) now look through two
   layers: `java.io.File` and a direct `Os.stat` system call. A path found by
   either counts, and a path only the kernel finds is reported by `hooked` as
