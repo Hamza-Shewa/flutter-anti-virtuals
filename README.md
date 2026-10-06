@@ -56,3 +56,7 @@ not visible to these checks.
 
 For mock-location results to include `isMock`, the host app needs location
 permission already granted; the plugin never asks for it.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
