@@ -83,7 +83,7 @@ internal class RulesTest {
             .map { it.groupValues[1] }.toSet()
         val known = KnownPackages.mockLocation + KnownPackages.remoteControl +
             KnownPackages.virtualCamera + KnownPackages.cloners + KnownPackages.emulator +
-            KnownPackages.root
+            KnownPackages.root + KnownPackages.hooking
         assertEquals(known, queried)
     }
 }
@@ -286,5 +286,113 @@ internal class RootRulesTest {
     @Test
     fun malformedMountLinesAreIgnored() {
         assertTrue(RootRules.details(stock.copy(mounts = listOf("", "garbage", "a b"))).isEmpty())
+    }
+}
+
+internal class HookRulesTest {
+    private val clean = HookEvidence(
+        mapsLines = listOf(
+            "7f1c000000-7f1c021000 r-xp 00000000 fd:01 1234 /system/lib64/libc.so",
+            "7f1d000000-7f1d100000 r-xp 00000000 fd:01 5678 /data/app/~~x/dev.shewa.app-1/lib/arm64/libflutter.so",
+            "7f1e000000-7f1e001000 rw-p 00000000 00:00 0 [anon:libc_malloc]"
+        ),
+        threadNames = setOf("main", "RenderThread", "1.ui", "1.raster")
+    )
+
+    @Test
+    fun cleanProcessIsClean() {
+        assertTrue(HookRules.details(clean).isEmpty())
+        assertTrue(HookRules.details(HookEvidence()).isEmpty())
+    }
+
+    @Test
+    fun hookingLibrariesInMemoryAreReported() {
+        val d = HookRules.details(
+            clean.copy(
+                mapsLines = clean.mapsLines.orEmpty() + listOf(
+                    "7f2000000-7f2100000 r-xp 0 fd:01 9 /data/local/tmp/re.frida.server/frida-agent-64.so",
+                    "7f3000000-7f3100000 r-xp 0 fd:01 9 /data/adb/lspd/framework/liblspd.so",
+                    "7f4000000-7f4100000 r-xp 0 fd:01 9 /data/data/x/libgadget.so"
+                )
+            )
+        )
+        assertEquals(
+            listOf("hooking library frida in memory", "hooking library libgadget in memory"),
+            d.filter { it.contains("frida") || it.contains("libgadget") }
+        )
+    }
+
+    @Test
+    fun fridaThreadsClassesPackagesFilesAndPort() {
+        assertEquals(
+            listOf("Frida thread gum-js-loop"),
+            HookRules.details(clean.copy(threadNames = clean.threadNames + "gum-js-loop"))
+        )
+        assertEquals(
+            listOf("hooking class de.robv.android.xposed.XposedBridge"),
+            HookRules.details(clean.copy(loadedClasses = setOf("de.robv.android.xposed.XposedBridge")))
+        )
+        assertEquals(
+            listOf("hooking app org.lsposed.manager"),
+            HookRules.details(clean.copy(installedPackages = setOf("org.lsposed.manager")))
+        )
+        assertEquals(
+            listOf("hooking file /system/xposed.prop"),
+            HookRules.details(clean.copy(existingFiles = setOf("/system/xposed.prop")))
+        )
+        assertEquals(
+            listOf("Frida server port 27042 is open"),
+            HookRules.details(clean.copy(fridaPortOpen = true))
+        )
+    }
+
+    @Test
+    fun aHookedCallShowsInTheStack() {
+        val d = HookRules.details(
+            clean.copy(
+                stackClassNames = listOf(
+                    "dev.shewa.flutter_anti_virtuals.AntiVirtualScanner",
+                    "de.robv.android.xposed.XposedBridge",
+                    "org.lsposed.lspd.hooker.HandleHookedMethod"
+                )
+            )
+        )
+        assertEquals(
+            listOf(
+                "hooked call stack through de.robv.android.xposed",
+                "hooked call stack through org.lsposed"
+            ),
+            d
+        )
+        assertTrue(
+            HookRules.details(clean.copy(stackClassNames = listOf("dev.shewa.flutter_anti_virtuals.X"))).isEmpty()
+        )
+    }
+}
+
+internal class DebuggerRulesTest {
+    private val status = "Name:\tapp\nTracerPid:\t0\nUid:\t10234\n"
+
+    @Test
+    fun noDebugger() {
+        assertTrue(DebuggerRules.details(false, false, status).isEmpty())
+        assertTrue(DebuggerRules.details(false, false, null).isEmpty())
+        assertEquals(0, DebuggerRules.tracerPid(status))
+    }
+
+    @Test
+    fun debuggersAreReported() {
+        assertEquals(listOf("Java debugger connected"), DebuggerRules.details(true, false, status))
+        assertEquals(listOf("waiting for a debugger"), DebuggerRules.details(false, true, status))
+        assertEquals(
+            listOf("process is traced by pid 4321"),
+            DebuggerRules.details(false, false, "Name:\tapp\nTracerPid:\t4321\n")
+        )
+    }
+
+    @Test
+    fun unreadableStatusIsNotADebugger() {
+        assertEquals(null, DebuggerRules.tracerPid("garbage"))
+        assertTrue(DebuggerRules.details(false, false, "TracerPid:\tx\n").isEmpty())
     }
 }

@@ -68,16 +68,26 @@ class AntiVirtualMessages {
       AntiVirtualSignal.vpn: 'A VPN is active. Turn it off to continue.',
       AntiVirtualSignal.proxy:
           'A network proxy is configured. Remove it to continue.',
-      AntiVirtualSignal.mockLocation: 'Fake GPS or a mock-location app was detected. Turn it off to continue.',
+      AntiVirtualSignal.mockLocation:
+          'Fake GPS or a mock-location app was detected. Turn it off to continue.',
       AntiVirtualSignal.virtualCamera:
           'A virtual or external camera was detected. Disable it to continue.',
-      AntiVirtualSignal.emulator: 'This app is running on an emulator or simulator. Use a real device to continue.',
-      AntiVirtualSignal.rooted: 'This device is rooted or jailbroken. Use an unmodified device to continue.',
+      AntiVirtualSignal.emulator:
+          'This app is running on an emulator or simulator. Use a real device to continue.',
+      AntiVirtualSignal.rooted:
+          'This device is rooted or jailbroken. Use an unmodified device to continue.',
+      AntiVirtualSignal.hooked:
+          'A hooking or instrumentation tool was detected in this app. Remove it to continue.',
+      AntiVirtualSignal.debugger:
+          'A debugger is attached to this app. Detach it to continue.',
       AntiVirtualSignal.developerOptions: 'Developer options are turned on.',
       AntiVirtualSignal.adb: 'USB or wireless debugging is turned on.',
-      AntiVirtualSignal.clockTampering: 'The device date, time or time zone looks incorrect. Enable automatic date & time.',
-      AntiVirtualSignal.untrustedInstaller: 'This app was not installed from a trusted store. Install it from the official store.',
-      AntiVirtualSignal.signatureMismatch: 'This app has been modified or re-signed. Install the official version.',
+      AntiVirtualSignal.clockTampering:
+          'The device date, time or time zone looks incorrect. Enable automatic date & time.',
+      AntiVirtualSignal.untrustedInstaller:
+          'This app was not installed from a trusted store. Install it from the official store.',
+      AntiVirtualSignal.signatureMismatch:
+          'This app has been modified or re-signed. Install the official version.',
       AntiVirtualSignal.accessibilityAbuse:
           'An accessibility service that can read your screen is active.',
       AntiVirtualSignal.remoteControlApp:
@@ -106,10 +116,16 @@ class AntiVirtualMessages {
           'تم اكتشاف كاميرا افتراضية أو خارجية. عطّلها للمتابعة.',
       AntiVirtualSignal.emulator:
           'التطبيق يعمل على محاكي. استخدم جهازًا حقيقيًا للمتابعة.',
-      AntiVirtualSignal.rooted: 'تم اكتشاف روت أو جلبريك على هذا الجهاز. استخدم جهازًا غير معدَّل للمتابعة.',
+      AntiVirtualSignal.rooted:
+          'تم اكتشاف روت أو جلبريك على هذا الجهاز. استخدم جهازًا غير معدَّل للمتابعة.',
+      AntiVirtualSignal.hooked:
+          'تم اكتشاف أداة حقن أو تتبّع في هذا التطبيق. أزلها للمتابعة.',
+      AntiVirtualSignal.debugger:
+          'يوجد مصحّح أخطاء متصل بهذا التطبيق. افصله للمتابعة.',
       AntiVirtualSignal.developerOptions: 'خيارات المطوّر مفعّلة.',
       AntiVirtualSignal.adb: 'تصحيح أخطاء USB أو اللاسلكي مفعّل.',
-      AntiVirtualSignal.clockTampering: 'تاريخ الجهاز أو وقته أو منطقته الزمنية غير صحيحة. فعّل التاريخ والوقت التلقائيين.',
+      AntiVirtualSignal.clockTampering:
+          'تاريخ الجهاز أو وقته أو منطقته الزمنية غير صحيحة. فعّل التاريخ والوقت التلقائيين.',
       AntiVirtualSignal.untrustedInstaller:
           'لم يتم تثبيت هذا التطبيق من متجر موثوق. ثبّته من المتجر الرسمي.',
       AntiVirtualSignal.signatureMismatch:
@@ -135,22 +151,35 @@ class AntiVirtualMessages {
       AntiVirtualSignal.vpn: 'Un VPN est actif. Désactivez-le pour continuer.',
       AntiVirtualSignal.proxy:
           'Un proxy réseau est configuré. Supprimez-le pour continuer.',
-      AntiVirtualSignal.mockLocation: 'Une fausse position GPS ou une application de simulation a été détectée. Désactivez-la pour continuer.',
-      AntiVirtualSignal.virtualCamera: 'Une caméra virtuelle ou externe a été détectée. Désactivez-la pour continuer.',
-      AntiVirtualSignal.emulator: "L'application s'exécute sur un émulateur ou un simulateur. Utilisez un appareil réel pour continuer.",
-      AntiVirtualSignal.rooted: "Cet appareil est rooté ou jailbreaké. Utilisez un appareil non modifié pour continuer.",
+      AntiVirtualSignal.mockLocation:
+          'Une fausse position GPS ou une application de simulation a été détectée. Désactivez-la pour continuer.',
+      AntiVirtualSignal.virtualCamera:
+          'Une caméra virtuelle ou externe a été détectée. Désactivez-la pour continuer.',
+      AntiVirtualSignal.emulator:
+          "L'application s'exécute sur un émulateur ou un simulateur. Utilisez un appareil réel pour continuer.",
+      AntiVirtualSignal.rooted:
+          "Cet appareil est rooté ou jailbreaké. Utilisez un appareil non modifié pour continuer.",
+      AntiVirtualSignal.hooked:
+          "Un outil d'instrumentation ou de hooking a été détecté dans cette application. Supprimez-le pour continuer.",
+      AntiVirtualSignal.debugger:
+          "Un débogueur est attaché à cette application. Détachez-le pour continuer.",
       AntiVirtualSignal.developerOptions:
           'Les options pour les développeurs sont activées.',
       AntiVirtualSignal.adb: 'Le débogage USB ou sans fil est activé.',
-      AntiVirtualSignal.clockTampering: 'La date, l\'heure ou le fuseau horaire de l\'appareil semble incorrect. Activez la date et l\'heure automatiques.',
-      AntiVirtualSignal.untrustedInstaller: 'Cette application n\'a pas été installée depuis une boutique de confiance. Installez-la depuis la boutique officielle.',
-      AntiVirtualSignal.signatureMismatch: 'Cette application a été modifiée ou re-signée. Installez la version officielle.',
+      AntiVirtualSignal.clockTampering:
+          'La date, l\'heure ou le fuseau horaire de l\'appareil semble incorrect. Activez la date et l\'heure automatiques.',
+      AntiVirtualSignal.untrustedInstaller:
+          'Cette application n\'a pas été installée depuis une boutique de confiance. Installez-la depuis la boutique officielle.',
+      AntiVirtualSignal.signatureMismatch:
+          'Cette application a été modifiée ou re-signée. Installez la version officielle.',
       AntiVirtualSignal.accessibilityAbuse:
           'Un service d\'accessibilité capable de lire votre écran est actif.',
-      AntiVirtualSignal.remoteControlApp: 'Une application de contrôle à distance est installée. Désinstallez-la pour continuer.',
+      AntiVirtualSignal.remoteControlApp:
+          'Une application de contrôle à distance est installée. Désinstallez-la pour continuer.',
       AntiVirtualSignal.clonedApp:
           'L\'application s\'exécute dans un espace cloné ou parallèle.',
-      AntiVirtualSignal.userCertificates: 'Un certificat de sécurité installé par l\'utilisateur a été détecté.',
+      AntiVirtualSignal.userCertificates:
+          'Un certificat de sécurité installé par l\'utilisateur a été détecté.',
       AntiVirtualSignal.sideloaded:
           'Cette application a été installée en dehors de l\'App Store.',
     },
@@ -165,19 +194,31 @@ class AntiVirtualMessages {
       AntiVirtualSignal.vpn: 'Hay una VPN activa. Desactívala para continuar.',
       AntiVirtualSignal.proxy:
           'Hay un proxy de red configurado. Elimínalo para continuar.',
-      AntiVirtualSignal.mockLocation: 'Se detectó una ubicación GPS falsa o una aplicación de simulación. Desactívala para continuar.',
-      AntiVirtualSignal.virtualCamera: 'Se detectó una cámara virtual o externa. Desactívala para continuar.',
-      AntiVirtualSignal.emulator: 'La aplicación se ejecuta en un emulador o simulador. Usa un dispositivo real para continuar.',
-      AntiVirtualSignal.rooted: 'Este dispositivo tiene root o jailbreak. Usa un dispositivo sin modificar para continuar.',
+      AntiVirtualSignal.mockLocation:
+          'Se detectó una ubicación GPS falsa o una aplicación de simulación. Desactívala para continuar.',
+      AntiVirtualSignal.virtualCamera:
+          'Se detectó una cámara virtual o externa. Desactívala para continuar.',
+      AntiVirtualSignal.emulator:
+          'La aplicación se ejecuta en un emulador o simulador. Usa un dispositivo real para continuar.',
+      AntiVirtualSignal.rooted:
+          'Este dispositivo tiene root o jailbreak. Usa un dispositivo sin modificar para continuar.',
+      AntiVirtualSignal.hooked:
+          'Se detectó una herramienta de hooking o instrumentación en esta aplicación. Elimínala para continuar.',
+      AntiVirtualSignal.debugger:
+          'Hay un depurador conectado a esta aplicación. Desconéctalo para continuar.',
       AntiVirtualSignal.developerOptions:
           'Las opciones de desarrollador están activadas.',
       AntiVirtualSignal.adb: 'La depuración USB o inalámbrica está activada.',
-      AntiVirtualSignal.clockTampering: 'La fecha, la hora o la zona horaria del dispositivo parece incorrecta. Activa la fecha y hora automáticas.',
-      AntiVirtualSignal.untrustedInstaller: 'Esta aplicación no se instaló desde una tienda de confianza. Instálala desde la tienda oficial.',
-      AntiVirtualSignal.signatureMismatch: 'Esta aplicación fue modificada o firmada de nuevo. Instala la versión oficial.',
+      AntiVirtualSignal.clockTampering:
+          'La fecha, la hora o la zona horaria del dispositivo parece incorrecta. Activa la fecha y hora automáticas.',
+      AntiVirtualSignal.untrustedInstaller:
+          'Esta aplicación no se instaló desde una tienda de confianza. Instálala desde la tienda oficial.',
+      AntiVirtualSignal.signatureMismatch:
+          'Esta aplicación fue modificada o firmada de nuevo. Instala la versión oficial.',
       AntiVirtualSignal.accessibilityAbuse:
           'Hay un servicio de accesibilidad activo que puede leer tu pantalla.',
-      AntiVirtualSignal.remoteControlApp: 'Hay una aplicación de control remoto instalada. Desinstálala para continuar.',
+      AntiVirtualSignal.remoteControlApp:
+          'Hay una aplicación de control remoto instalada. Desinstálala para continuar.',
       AntiVirtualSignal.clonedApp:
           'La aplicación se ejecuta en un espacio clonado o paralelo.',
       AntiVirtualSignal.userCertificates:

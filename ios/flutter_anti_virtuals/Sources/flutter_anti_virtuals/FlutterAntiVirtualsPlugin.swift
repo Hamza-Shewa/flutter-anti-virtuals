@@ -107,7 +107,7 @@ final class AntiVirtualScanner {
   private static let allSignals = [
     "vpn", "proxy", "mockLocation", "virtualCamera", "developerOptions", "adb",
     "clockTampering", "untrustedInstaller", "signatureMismatch", "accessibilityAbuse",
-    "remoteControlApp", "clonedApp", "userCertificates", "sideloaded", "emulator", "rooted",
+    "remoteControlApp", "clonedApp", "userCertificates", "sideloaded", "emulator", "rooted", "hooked", "debugger",
   ]
 
   func scan(wanted: Set<String>?, maxSkewMs: Int64, trustedMs: Int64?) -> [String: Any] {
@@ -123,6 +123,8 @@ final class AntiVirtualScanner {
       case "sideloaded": out[signal] = sideloaded().map
       case "emulator": out[signal] = emulator().map
       case "rooted": out[signal] = jailbroken().map
+      case "hooked": out[signal] = hooked().map
+      case "debugger": out[signal] = debugger().map
       default: out[signal] = Detection.unsupported.map  // Android-only concepts.
       }
     }
@@ -286,6 +288,78 @@ final class AntiVirtualScanner {
       }
       return .of(Array(Set(details)).sorted())
     #endif
+  }
+
+  // Instrumentation frameworks loaded into the app. Substrate-style libraries are listed here
+  // and under `rooted`, because a jailbreak injects them and a hooking tool uses them.
+  private static let hookImages = [
+    "frida", "fridagadget", "cynject", "libcycript", "cycript", "mobilesubstrate", "libsubstrate",
+    "libsubstitute", "libhooker", "ellekit", "sslkillswitch",
+  ]
+  private static let hookClasses = [
+    "FridaGadget", "FridaScriptEngine", "CydiaSubstrate", "SubstrateLoader", "SubstrateBootstrap",
+    "CaptainHook", "CYListenServer",
+  ]
+  private static let fridaPort: UInt16 = 27042
+
+  private func hooked() -> Detection {
+    var details: [String] = []
+    for index in 0..<_dyld_image_count() {
+      guard let raw = _dyld_get_image_name(index) else { continue }
+      let image = String(cString: raw).lowercased()
+      if let token = Self.hookImages.first(where: { image.contains($0) }) {
+        details.append("hooking library \(token) loaded")
+      }
+    }
+    for name in Self.hookClasses where NSClassFromString(name) != nil {
+      details.append("hooking class \(name)")
+    }
+    if let value = getenv("DYLD_INSERT_LIBRARIES"), strlen(value) > 0 {
+      details.append("DYLD_INSERT_LIBRARIES is set")
+    }
+    if Self.portOpen(Self.fridaPort) {
+      details.append("Frida server port \(Self.fridaPort) is open")
+    }
+    return .of(Array(Set(details)).sorted())
+  }
+
+  // True when something accepts connections on 127.0.0.1:port. Gives up after 200 ms.
+  private static func portOpen(_ port: UInt16) -> Bool {
+    let fd = socket(AF_INET, SOCK_STREAM, 0)
+    if fd < 0 { return false }
+    defer { close(fd) }
+    var address = sockaddr_in()
+    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_port = port.bigEndian
+    address.sin_addr.s_addr = inet_addr("127.0.0.1")
+    _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
+    let result = withUnsafePointer(to: &address) { pointer in
+      pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+      }
+    }
+    if result == 0 { return true }
+    guard errno == EINPROGRESS else { return false }
+    var poller = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+    guard poll(&poller, 1, 200) > 0 else { return false }
+    var error: Int32 = 0
+    var length = socklen_t(MemoryLayout<Int32>.size)
+    getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &length)
+    return error == 0
+  }
+
+  private func debugger() -> Detection {
+    var info = kinfo_proc()
+    var size = MemoryLayout<kinfo_proc>.stride
+    var name: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+    let result = name.withUnsafeMutableBufferPointer { pointer in
+      sysctl(pointer.baseAddress, 4, &info, &size, nil, 0)
+    }
+    if result == 0 && (info.kp_proc.p_flag & P_TRACED) != 0 {
+      return .of(["process is being traced"])
+    }
+    return .of([])
   }
 
   private func sideloaded() -> Detection {

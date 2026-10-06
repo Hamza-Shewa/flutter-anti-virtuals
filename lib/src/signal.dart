@@ -7,6 +7,8 @@ enum AntiVirtualSignal {
   virtualCamera,
   emulator,
   rooted,
+  hooked,
+  debugger,
 
   // Beyond what `flutter_defender` offers.
   developerOptions,

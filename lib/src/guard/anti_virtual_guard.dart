@@ -14,10 +14,8 @@ import 'messages.dart';
 
 /// Builds the screen shown while [matches] (in [AntiVirtualSignal] order) are
 /// detected, for example `[vpn, mockLocation]`.
-typedef AntiVirtualBlockedBuilder = Widget Function(
-  BuildContext context,
-  List<AntiVirtualSignal> matches,
-);
+typedef AntiVirtualBlockedBuilder =
+    Widget Function(BuildContext context, List<AntiVirtualSignal> matches);
 
 /// Runs a scan when the app starts (and when it returns to the foreground) and
 /// covers [child] with a blocking screen while a blocking signal is detected.
@@ -80,7 +78,10 @@ class AntiVirtualGuard extends StatefulWidget {
   /// development; add it in release builds (`if (kReleaseMode)`).
   /// [AntiVirtualSignal.rooted] is left out too, because blocking every rooted
   /// or jailbroken device locks out legitimate users in some markets; add it
-  /// when your app needs to refuse them.
+  /// when your app needs to refuse them. [AntiVirtualSignal.hooked] and
+  /// [AntiVirtualSignal.debugger] are left out as well: a debug build run from
+  /// your IDE has a debugger attached, and a hook is a strong signal that you
+  /// may prefer to send to your server instead of blocking on the device.
   static const Set<AntiVirtualSignal> defaultBlockingSignals =
       <AntiVirtualSignal>{
         AntiVirtualSignal.vpn,

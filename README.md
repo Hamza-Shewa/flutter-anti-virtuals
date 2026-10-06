@@ -106,6 +106,8 @@ also compare the clock.
 | `virtualCamera` | partial | iOS 17+ | Known virtual-camera apps, external cameras |
 | `emulator` | yes | yes | Android: any one strong indicator (`ro.kernel.qemu`/`ro.boot.qemu`, goldfish/ranchu/vbox86 hardware, qemu and vendor files, Genymotion, BlueStacks, Nox, LDPlayer, MEmu builds or apps, Goldfish sensors) or two weak ones (generic fingerprint, SDK model or product, no sensors, operator "Android", ...), so real devices are not reported. iOS: Simulator build, `SIMULATOR_*` environment, host CPU as hardware model |
 | `rooted` | yes | yes | Android root, iOS jailbreak. Android: any one strong indicator (`su`, `magisk` or `daemonsu` in `PATH` and the usual directories, a root manager or root-hiding app such as Magisk, KernelSU, APatch, SuperSU, RootCloak, root tool files, a writable `/system`, `/vendor` or `/product`, `adbd` as root, `ro.secure=0`, permissive SELinux, Magisk/KernelSU/APatch mounts) or two weak ones (a debug build of the system and an unlocked bootloader). iOS: Cydia, Sileo, Zebra, Filza and other jailbreak files (rootless `/var/jb` and `/var/binpack` too), a successful write outside the sandbox, injected tweak libraries (Substrate, Substitute, libhooker, ElleKit) and `DYLD_INSERT_LIBRARIES`. The iOS Simulator is reported by `emulator`, not here |
+| `hooked` | yes | yes | Instrumentation in the app process. Android: Frida, Xposed, LSPosed, EdXposed, Substrate or Riru/Zygisk libraries in `/proc/self/maps`, Frida threads, `XposedBridge` classes, hooking managers and files, framework frames in the plugin's own call stack (a hooked method), Frida's default server port. iOS: injected Frida, Substrate, Substitute, libhooker and ElleKit libraries, hooking classes, `DYLD_INSERT_LIBRARIES`, the Frida port |
+| `debugger` | yes | yes | A Java debugger or `TracerPid` (Android), `P_TRACED` (iOS). A debug build started from your IDE reports it, so it is not blocking by default |
 | `developerOptions` | yes | no | `DEVELOPMENT_SETTINGS_ENABLED` |
 | `adb` | yes | no | USB and wireless debugging |
 | `clockTampering` | yes | needs `trustedTime` | Auto time/zone off, skew against server time |
@@ -146,6 +148,11 @@ AntiVirtualGuard(
   child: child,
 )
 ```
+
+`hooked` and `debugger` are not blocking by default for the same reason. A
+hooking tool can rename itself or hide its mappings, so treat a detection as
+strong evidence and a clean result as no evidence. The Frida port check needs
+the `INTERNET` permission, which most apps already have.
 
 Root-hiding tools (Magisk's Zygisk DenyList, Shamiko, jailbreak-detection
 bypass tweaks) remove most of the evidence for a targeted app, so a clean result

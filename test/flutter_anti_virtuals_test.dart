@@ -258,6 +258,18 @@ void main() {
             .toMap()['signals'],
         ['emulator'],
       );
+      expect(ScanOptions(checkHooked: false), isNot(ScanOptions()));
+      expect(ScanOptions(checkDebugger: false), isNot(ScanOptions()));
+      expect(
+        ScanOptions().onlyChecking(AntiVirtualSignal.hooked).toMap()['signals'],
+        ['hooked'],
+      );
+      expect(
+        ScanOptions()
+            .onlyChecking(AntiVirtualSignal.debugger)
+            .toMap()['signals'],
+        ['debugger'],
+      );
       expect(ScanOptions(checkRooted: false), isNot(ScanOptions()));
       expect(ScanOptions().enabledSignals, contains(AntiVirtualSignal.rooted));
       expect(
