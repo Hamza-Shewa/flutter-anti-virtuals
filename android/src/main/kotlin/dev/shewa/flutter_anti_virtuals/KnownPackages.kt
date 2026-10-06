@@ -116,4 +116,30 @@ internal object KnownPackages {
         "com.mumu.launcher",
         "com.netease.mumu.cloner"
     )
+
+    /** Root managers, one-click rooters and root-hiding tools. */
+    val root = setOf(
+        "com.topjohnwu.magisk",
+        "io.github.huskydg.magisk",
+        "io.github.vvb2060.magisk",
+        "me.weishu.kernelsu",
+        "me.bmax.apatch",
+        "eu.chainfire.supersu",
+        "com.noshufou.android.su",
+        "com.noshufou.android.su.elite",
+        "com.koushikdutta.superuser",
+        "com.thirdparty.superuser",
+        "com.yellowes.su",
+        "com.kingroot.kinguser",
+        "com.kingo.root",
+        "com.zhiqupk.root.global",
+        "com.alephzain.framaroot",
+        "com.smedialink.oneclickroot",
+        "com.devadvance.rootcloak",
+        "com.devadvance.rootcloakplus",
+        "com.amphoras.hidemyroot",
+        "com.amphoras.hidemyrootadfree",
+        "com.formyhm.hideroot",
+        "com.formyhm.hiderootPremium"
+    )
 }

@@ -78,6 +78,9 @@ class AntiVirtualGuard extends StatefulWidget {
   /// through [onReport] but do not block by default. So is
   /// [AntiVirtualSignal.emulator], which would block your own emulator during
   /// development; add it in release builds (`if (kReleaseMode)`).
+  /// [AntiVirtualSignal.rooted] is left out too, because blocking every rooted
+  /// or jailbroken device locks out legitimate users in some markets; add it
+  /// when your app needs to refuse them.
   static const Set<AntiVirtualSignal> defaultBlockingSignals =
       <AntiVirtualSignal>{
         AntiVirtualSignal.vpn,

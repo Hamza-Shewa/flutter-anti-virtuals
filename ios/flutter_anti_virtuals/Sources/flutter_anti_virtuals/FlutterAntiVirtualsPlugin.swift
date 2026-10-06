@@ -3,6 +3,7 @@ import CFNetwork
 import CoreLocation
 import Flutter
 import Foundation
+import MachO
 import Network
 import UIKit
 
@@ -106,7 +107,7 @@ final class AntiVirtualScanner {
   private static let allSignals = [
     "vpn", "proxy", "mockLocation", "virtualCamera", "developerOptions", "adb",
     "clockTampering", "untrustedInstaller", "signatureMismatch", "accessibilityAbuse",
-    "remoteControlApp", "clonedApp", "userCertificates", "sideloaded", "emulator",
+    "remoteControlApp", "clonedApp", "userCertificates", "sideloaded", "emulator", "rooted",
   ]
 
   func scan(wanted: Set<String>?, maxSkewMs: Int64, trustedMs: Int64?) -> [String: Any] {
@@ -121,6 +122,7 @@ final class AntiVirtualScanner {
         out[signal] = clock(maxSkewMs: maxSkewMs, trustedMs: trustedMs).map
       case "sideloaded": out[signal] = sideloaded().map
       case "emulator": out[signal] = emulator().map
+      case "rooted": out[signal] = jailbroken().map
       default: out[signal] = Detection.unsupported.map  // Android-only concepts.
       }
     }
@@ -227,6 +229,63 @@ final class AntiVirtualScanner {
       }
     }
     return .of(details)
+  }
+
+  // Files and directories that exist only on a jailbroken device. Each one is enough on its
+  // own: stock iOS has none of them. Rootless jailbreaks (Dopamine, palera1n) use /var/jb and
+  // /var/binpack.
+  private static let jailbreakPaths = [
+    "/Applications/Cydia.app", "/Applications/Sileo.app", "/Applications/Zebra.app",
+    "/Applications/Installer.app", "/Applications/Filza.app", "/Applications/Icy.app",
+    "/Applications/SBSettings.app", "/Applications/blackra1n.app",
+    "/Library/MobileSubstrate/MobileSubstrate.dylib", "/Library/MobileSubstrate/DynamicLibraries",
+    "/Library/PreferenceLoader", "/usr/lib/libjailbreak.dylib", "/usr/lib/libsubstitute.dylib",
+    "/usr/lib/substrate", "/usr/lib/TweakInject", "/usr/libexec/cydia",
+    "/usr/libexec/sftp-server", "/usr/sbin/sshd", "/usr/bin/ssh", "/bin/bash",
+    "/usr/bin/cycript", "/usr/local/bin/cycript", "/etc/apt", "/private/var/lib/apt",
+    "/private/var/lib/cydia", "/private/var/stash", "/private/var/tmp/cydia.log",
+    "/var/jb", "/private/var/jb", "/var/binpack", "/private/var/binpack",
+    "/.bootstrapped_electra", "/.installed_unc0ver",
+  ]
+
+  // Libraries a jailbreak injects into apps. Frida and other hooking tools are not listed.
+  private static let jailbreakImages = [
+    "mobilesubstrate", "libsubstrate", "libsubstitute", "libhooker", "ellekit", "tweakinject",
+    "tweakloader", "libjailbreak",
+  ]
+
+  private func jailbroken() -> Detection {
+    #if targetEnvironment(simulator)
+      // Not a jailbreak; the `emulator` signal reports the Simulator.
+      return .of([])
+    #else
+      var details: [String] = []
+      let fm = FileManager.default
+      for path in Self.jailbreakPaths where fm.fileExists(atPath: path) {
+        details.append("jailbreak file \(path)")
+      }
+      // The sandbox does not let an app write outside its container.
+      let probe = "/private/anti_virtuals_\(UUID().uuidString)"
+      if (try? "x".write(toFile: probe, atomically: true, encoding: .utf8)) != nil {
+        details.append("wrote outside the sandbox")
+        try? fm.removeItem(atPath: probe)
+      }
+      // Very old jailbreaks moved system directories and left symbolic links behind.
+      if (try? fm.destinationOfSymbolicLink(atPath: "/Applications")) != nil {
+        details.append("/Applications is a symbolic link")
+      }
+      if let value = getenv("DYLD_INSERT_LIBRARIES"), strlen(value) > 0 {
+        details.append("DYLD_INSERT_LIBRARIES is set")
+      }
+      for index in 0..<_dyld_image_count() {
+        guard let raw = _dyld_get_image_name(index) else { continue }
+        let image = String(cString: raw).lowercased()
+        if let token = Self.jailbreakImages.first(where: { image.contains($0) }) {
+          details.append("jailbreak library \(token)")
+        }
+      }
+      return .of(Array(Set(details)).sorted())
+    #endif
   }
 
   private func sideloaded() -> Detection {

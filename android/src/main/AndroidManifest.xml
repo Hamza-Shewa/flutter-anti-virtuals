@@ -8,7 +8,10 @@
         <package android:name="app.fakegps.joystick" />
         <package android:name="app.virtualcam.fake" />
         <package android:name="com.airdroid.remote" />
+        <package android:name="com.alephzain.framaroot" />
         <package android:name="com.ammyy.admin" />
+        <package android:name="com.amphoras.hidemyroot" />
+        <package android:name="com.amphoras.hidemyrootadfree" />
         <package android:name="com.android.flysilkworm" />
         <package android:name="com.android.virtualcamera" />
         <package android:name="com.anydesk.adcontrol.ad1" />
@@ -29,6 +32,8 @@
         <package android:name="com.cloudphone.android" />
         <package android:name="com.dev47apps.droidcam" />
         <package android:name="com.dev47apps.droidcamx" />
+        <package android:name="com.devadvance.rootcloak" />
+        <package android:name="com.devadvance.rootcloakplus" />
         <package android:name="com.divi.fakegps" />
         <package android:name="com.droidcam.android" />
         <package android:name="com.dualspace.app" />
@@ -39,6 +44,8 @@
         <package android:name="com.fakecamera.android" />
         <package android:name="com.fakegps.mock" />
         <package android:name="com.fly.gps" />
+        <package android:name="com.formyhm.hideroot" />
+        <package android:name="com.formyhm.hiderootPremium" />
         <package android:name="com.gaijin.vnc" />
         <package android:name="com.genymotion.superuser" />
         <package android:name="com.genymotion.systempatcher" />
@@ -49,7 +56,10 @@
         <package android:name="com.incorporateapps.fakegps.fre" />
         <package android:name="com.ivcam.android" />
         <package android:name="com.jinyuan.fakegps" />
+        <package android:name="com.kingo.root" />
+        <package android:name="com.kingroot.kinguser" />
         <package android:name="com.kinoni.iriunwebcam" />
+        <package android:name="com.koushikdutta.superuser" />
         <package android:name="com.koushikdutta.vysor" />
         <package android:name="com.lbe.parallel" />
         <package android:name="com.lbe.parallel.intl" />
@@ -69,6 +79,8 @@
         <package android:name="com.mumu.launcher" />
         <package android:name="com.netease.mumu.cloner" />
         <package android:name="com.nonameapps.virtualcamera" />
+        <package android:name="com.noshufou.android.su" />
+        <package android:name="com.noshufou.android.su.elite" />
         <package android:name="com.obsproject.virtualcam" />
         <package android:name="com.pe.fakelocation" />
         <package android:name="com.pixel.virtualcamera" />
@@ -79,6 +91,7 @@
         <package android:name="com.rustdesk.rustdesk" />
         <package android:name="com.sand.airdroid" />
         <package android:name="com.sand.airsos" />
+        <package android:name="com.smedialink.oneclickroot" />
         <package android:name="com.splashtop.remote.pad.v2" />
         <package android:name="com.splashtop.sos" />
         <package android:name="com.sqisland.android.mocklocation" />
@@ -87,6 +100,8 @@
         <package android:name="com.teamviewer.quicksupport.market" />
         <package android:name="com.teamviewer.teamviewer.market.mobile" />
         <package android:name="com.theappninjas.fakegpsjoystick" />
+        <package android:name="com.thirdparty.superuser" />
+        <package android:name="com.topjohnwu.magisk" />
         <package android:name="com.usefullapps.fakegpslocationpro" />
         <package android:name="com.vcam.android" />
         <package android:name="com.virtualcam.fakecamera" />
@@ -96,12 +111,19 @@
         <package android:name="com.vphone.launcher" />
         <package android:name="com.wangyiheng.vcamsx" />
         <package android:name="com.xiaofeng.virtualcamera" />
+        <package android:name="com.yellowes.su" />
+        <package android:name="com.zhiqupk.root.global" />
         <package android:name="com.zoho.assist.agent" />
         <package android:name="com.zoho.assist.customer" />
+        <package android:name="eu.chainfire.supersu" />
         <package android:name="fake.gps.location.spoofer.free" />
         <package android:name="info.red.virtual" />
         <package android:name="io.github.a13e300.vcam" />
+        <package android:name="io.github.huskydg.magisk" />
+        <package android:name="io.github.vvb2060.magisk" />
         <package android:name="io.va.exposed" />
+        <package android:name="me.bmax.apatch" />
+        <package android:name="me.weishu.kernelsu" />
         <package android:name="net.sourceforge.vncviewer" />
         <package android:name="ru.gavrikov.mocklocations" />
     </queries>

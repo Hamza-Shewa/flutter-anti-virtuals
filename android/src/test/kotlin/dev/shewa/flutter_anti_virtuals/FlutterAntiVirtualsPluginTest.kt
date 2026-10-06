@@ -82,7 +82,8 @@ internal class RulesTest {
         val queried = Regex("<package android:name=\"([^\"]+)\"").findAll(manifest)
             .map { it.groupValues[1] }.toSet()
         val known = KnownPackages.mockLocation + KnownPackages.remoteControl +
-            KnownPackages.virtualCamera + KnownPackages.cloners + KnownPackages.emulator
+            KnownPackages.virtualCamera + KnownPackages.cloners + KnownPackages.emulator +
+            KnownPackages.root
         assertEquals(known, queried)
     }
 }
@@ -165,5 +166,125 @@ internal class EmulatorRulesTest {
             listOf("emulator app com.bluestacks.home"),
             EmulatorRules.details(pixel.copy(installedPackages = setOf("com.bluestacks.home")))
         )
+    }
+}
+
+internal class RootRulesTest {
+    private val stock = RootEvidence(
+        tags = "release-keys",
+        fingerprint = "google/husky/husky:15/AP4A.250105.002/12701944:user/release-keys",
+        properties = mapOf(
+            "ro.debuggable" to "0",
+            "ro.secure" to "1",
+            "ro.build.type" to "user",
+            "ro.build.tags" to "release-keys",
+            "ro.boot.verifiedbootstate" to "green",
+            "ro.boot.flash.locked" to "1",
+            "ro.boot.vbmeta.device_state" to "locked"
+        ),
+        mounts = listOf(
+            "/dev/block/dm-0 /system ext4 ro,seclabel,relatime 0 0",
+            "/dev/block/dm-1 /vendor ext4 ro,seclabel,relatime 0 0",
+            "/dev/block/dm-5 /data f2fs rw,lazytime,seclabel,nosuid,nodev 0 0",
+            "tmpfs /apex tmpfs rw,seclabel,nosuid,nodev,noexec,relatime,mode=755 0 0"
+        )
+    )
+
+    @Test
+    fun stockDeviceIsClean() {
+        assertTrue(RootRules.details(stock).isEmpty())
+        assertTrue(RootRules.details(RootEvidence()).isEmpty())
+    }
+
+    @Test
+    fun oneWeakIndicatorIsNotEnough() {
+        assertTrue(RootRules.details(stock.copy(tags = "test-keys")).isEmpty())
+        assertTrue(
+            RootRules.details(stock.copy(properties = stock.properties + ("ro.boot.verifiedbootstate" to "orange")))
+                .isEmpty()
+        )
+    }
+
+    @Test
+    fun theSignsOfADebugBuildCountOnce() {
+        val debug = stock.copy(
+            tags = "dev-keys",
+            properties = stock.properties + mapOf("ro.debuggable" to "1", "ro.build.type" to "userdebug")
+        )
+        assertTrue(RootRules.details(debug).isEmpty())
+    }
+
+    @Test
+    fun aDebugBuildWithAnUnlockedBootloaderIsReported() {
+        val d = RootRules.details(
+            stock.copy(
+                tags = "test-keys",
+                properties = stock.properties + ("ro.boot.flash.locked" to "0")
+            )
+        )
+        assertEquals(listOf("debug build of the system", "unlocked bootloader"), d)
+    }
+
+    @Test
+    fun strongIndicatorsAreEnoughOnTheirOwn() {
+        assertEquals(
+            listOf("root binary /system/xbin/su"),
+            RootRules.details(stock.copy(binaries = setOf("/system/xbin/su")))
+        )
+        assertEquals(
+            listOf("root app com.topjohnwu.magisk"),
+            RootRules.details(stock.copy(installedPackages = setOf("com.topjohnwu.magisk")))
+        )
+        assertEquals(
+            listOf("root file /system/app/Superuser.apk"),
+            RootRules.details(stock.copy(existingFiles = setOf("/system/app/Superuser.apk")))
+        )
+        assertEquals(
+            listOf("adbd runs as root"),
+            RootRules.details(stock.copy(properties = stock.properties + ("service.adb.root" to "1")))
+        )
+        assertEquals(
+            listOf("ro.secure=0"),
+            RootRules.details(stock.copy(properties = stock.properties + ("ro.secure" to "0")))
+        )
+        assertEquals(listOf("SELinux is permissive"), RootRules.details(stock.copy(selinuxEnforce = "0\n")))
+        assertTrue(RootRules.details(stock.copy(selinuxEnforce = "1")).isEmpty())
+    }
+
+    @Test
+    fun aWritableSystemPartitionIsReported() {
+        val d = RootRules.details(
+            stock.copy(mounts = listOf("/dev/block/dm-0 /system ext4 rw,seclabel,relatime 0 0"))
+        )
+        assertEquals(listOf("writable /system"), d)
+        // /data is writable on every device.
+        assertTrue(RootRules.details(stock.copy(mounts = listOf("/dev/x /data f2fs rw,seclabel 0 0"))).isEmpty())
+        // "ro" listed after other options does not make it read-write.
+        assertTrue(
+            RootRules.details(stock.copy(mounts = listOf("/dev/x /system ext4 ro,rw_foo 0 0"))).isEmpty()
+        )
+    }
+
+    @Test
+    fun magiskAndKernelSuMountsAreReported() {
+        assertEquals(
+            listOf("magisk mount /system/bin"),
+            RootRules.details(stock.copy(mounts = listOf("magisk /system/bin tmpfs ro 0 0")))
+        )
+        assertEquals(
+            listOf("ksu mount /system"),
+            RootRules.details(stock.copy(mounts = listOf("KSU /system overlay ro,seclabel 0 0")))
+        )
+        assertEquals(
+            listOf("magisk mount /sbin/.magisk/mirror/system"),
+            RootRules.details(stock.copy(mounts = listOf("/dev/x /sbin/.magisk/mirror/system ext4 ro 0 0")))
+        )
+        // An unrelated name that merely contains the letters.
+        assertTrue(RootRules.details(stock.copy(mounts = listOf("/dev/x /mnt/ksulu ext4 ro 0 0"))).isEmpty())
+    }
+
+    @Test
+    fun malformedMountLinesAreIgnored() {
+        assertTrue(RootRules.details(stock.copy(mounts = listOf("", "garbage", "a b"))).isEmpty())
     }
 }

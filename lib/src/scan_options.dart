@@ -18,6 +18,7 @@ class ScanOptions {
     this.checkMockLocation = true,
     this.checkVirtualCamera = true,
     this.checkEmulator = true,
+    this.checkRooted = true,
     this.checkDeveloperOptions = true,
     this.checkAdb = true,
     this.checkClockTampering = true,
@@ -70,6 +71,11 @@ class ScanOptions {
   /// Android emulator (Android Studio, Genymotion, BlueStacks, Nox, LDPlayer,
   /// MEmu, ...) or the iOS Simulator.
   final bool checkEmulator;
+
+  /// Android root (su binaries, Magisk, KernelSU, root apps, writable system
+  /// partition, ...) or an iOS jailbreak (Cydia, Sileo, /var/jb, writing
+  /// outside the sandbox, ...).
+  final bool checkRooted;
 
   /// Android developer options enabled.
   final bool checkDeveloperOptions;
@@ -135,6 +141,7 @@ class ScanOptions {
           other.checkMockLocation == checkMockLocation &&
           other.checkVirtualCamera == checkVirtualCamera &&
           other.checkEmulator == checkEmulator &&
+          other.checkRooted == checkRooted &&
           other.checkDeveloperOptions == checkDeveloperOptions &&
           other.checkAdb == checkAdb &&
           other.checkClockTampering == checkClockTampering &&
@@ -161,6 +168,7 @@ class ScanOptions {
     checkMockLocation,
     checkVirtualCamera,
     checkEmulator,
+    checkRooted,
     checkDeveloperOptions,
     checkAdb,
     checkClockTampering,
@@ -185,6 +193,7 @@ class ScanOptions {
     if (checkMockLocation) AntiVirtualSignal.mockLocation,
     if (checkVirtualCamera) AntiVirtualSignal.virtualCamera,
     if (checkEmulator) AntiVirtualSignal.emulator,
+    if (checkRooted) AntiVirtualSignal.rooted,
     if (checkDeveloperOptions) AntiVirtualSignal.developerOptions,
     if (checkAdb) AntiVirtualSignal.adb,
     if (checkClockTampering) AntiVirtualSignal.clockTampering,
@@ -205,6 +214,7 @@ class ScanOptions {
     checkMockLocation: signal == AntiVirtualSignal.mockLocation,
     checkVirtualCamera: signal == AntiVirtualSignal.virtualCamera,
     checkEmulator: signal == AntiVirtualSignal.emulator,
+    checkRooted: signal == AntiVirtualSignal.rooted,
     checkDeveloperOptions: signal == AntiVirtualSignal.developerOptions,
     checkAdb: signal == AntiVirtualSignal.adb,
     checkClockTampering: signal == AntiVirtualSignal.clockTampering,

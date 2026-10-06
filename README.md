@@ -105,6 +105,7 @@ also compare the clock.
 | `mockLocation` | yes | iOS 15+ | `Location.isMock` of a fix from the last 2 minutes (needs granted location permission and the app in the foreground), known mock apps; iOS `isSimulatedBySoftware` |
 | `virtualCamera` | partial | iOS 17+ | Known virtual-camera apps, external cameras |
 | `emulator` | yes | yes | Android: any one strong indicator (`ro.kernel.qemu`/`ro.boot.qemu`, goldfish/ranchu/vbox86 hardware, qemu and vendor files, Genymotion, BlueStacks, Nox, LDPlayer, MEmu builds or apps, Goldfish sensors) or two weak ones (generic fingerprint, SDK model or product, no sensors, operator "Android", ...), so real devices are not reported. iOS: Simulator build, `SIMULATOR_*` environment, host CPU as hardware model |
+| `rooted` | yes | yes | Android root, iOS jailbreak. Android: any one strong indicator (`su`, `magisk` or `daemonsu` in `PATH` and the usual directories, a root manager or root-hiding app such as Magisk, KernelSU, APatch, SuperSU, RootCloak, root tool files, a writable `/system`, `/vendor` or `/product`, `adbd` as root, `ro.secure=0`, permissive SELinux, Magisk/KernelSU/APatch mounts) or two weak ones (a debug build of the system and an unlocked bootloader). iOS: Cydia, Sileo, Zebra, Filza and other jailbreak files (rootless `/var/jb` and `/var/binpack` too), a successful write outside the sandbox, injected tweak libraries (Substrate, Substitute, libhooker, ElleKit) and `DYLD_INSERT_LIBRARIES`. The iOS Simulator is reported by `emulator`, not here |
 | `developerOptions` | yes | no | `DEVELOPMENT_SETTINGS_ENABLED` |
 | `adb` | yes | no | USB and wireless debugging |
 | `clockTampering` | yes | needs `trustedTime` | Auto time/zone off, skew against server time |
@@ -134,6 +135,22 @@ AntiVirtualGuard(
   child: child,
 )
 ```
+
+`rooted` is not blocking by default either, because refusing every rooted or
+jailbroken device locks out legitimate users in some markets. Add it when your
+app must refuse them:
+
+```dart
+AntiVirtualGuard(
+  blockOn: {...AntiVirtualGuard.defaultBlockingSignals, AntiVirtualSignal.rooted},
+  child: child,
+)
+```
+
+Root-hiding tools (Magisk's Zygisk DenyList, Shamiko, jailbreak-detection
+bypass tweaks) remove most of the evidence for a targeted app, so a clean result
+does not prove a clean device. Use Play Integrity / App Attest on your server
+for anything that matters.
 
 ## Limits
 

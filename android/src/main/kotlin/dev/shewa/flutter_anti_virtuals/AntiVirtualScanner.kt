@@ -67,7 +67,8 @@ internal class AntiVirtualScanner(private val context: Context) {
             "clonedApp" to ::clonedApp,
             "userCertificates" to ::userCertificates,
             "sideloaded" to { Detection.unsupported },
-            "emulator" to ::emulator
+            "emulator" to ::emulator,
+            "rooted" to ::rooted
         )
         return checks
             .filterKeys { config.signals == null || it in config.signals }
@@ -305,6 +306,28 @@ internal class AntiVirtualScanner(private val context: Context) {
         )
         return Detection.of(EmulatorRules.details(evidence))
     }
+
+    // ---- root -------------------------------------------------------------
+
+    private fun rooted(): Detection {
+        val directories = (System.getenv("PATH").orEmpty().split(':').filter { it.startsWith("/") } +
+            RootRules.BINARY_DIRECTORIES).distinct()
+        val evidence = RootEvidence(
+            tags = Build.TAGS.orEmpty(),
+            fingerprint = Build.FINGERPRINT.orEmpty(),
+            properties = systemProperties(RootRules.PROPERTIES),
+            binaries = directories.flatMap { dir -> RootRules.BINARIES.map { "$dir/$it" } }
+                .filter { exists(it) }.toSet(),
+            existingFiles = RootRules.FILES.filter { exists(it) }.toSet(),
+            installedPackages = installed(KnownPackages.root).toSet(),
+            mounts = try { File("/proc/mounts").readLines() } catch (_: Throwable) { null },
+            // Apps are normally not allowed to read this; it only matters when they are.
+            selinuxEnforce = try { File("/sys/fs/selinux/enforce").readText() } catch (_: Throwable) { null }
+        )
+        return Detection.of(RootRules.details(evidence))
+    }
+
+    private fun exists(path: String): Boolean = try { File(path).exists() } catch (_: Throwable) { false }
 
     /** Reads system properties through the hidden `SystemProperties`, falling back to `getprop`. */
     private fun systemProperties(keys: List<String>): Map<String, String> {
