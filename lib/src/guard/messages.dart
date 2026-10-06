@@ -8,6 +8,7 @@ class AntiVirtualMessages {
   const AntiVirtualMessages({
     required this.title,
     required this.subtitle,
+    required this.scanFailed,
     required this.closingIn,
     required this.signals,
     this.textDirection = TextDirection.ltr,
@@ -19,6 +20,10 @@ class AntiVirtualMessages {
 
   final String title;
   final String subtitle;
+
+  /// Shown instead of the list when the guard blocks because a scan failed
+  /// (`AntiVirtualGuard.failClosed`).
+  final String scanFailed;
 
   /// Builds the "the app will close in N seconds" line. A function so each
   /// language can apply its own plural rules.
@@ -41,19 +46,23 @@ class AntiVirtualMessages {
   AntiVirtualMessages copyWith({
     String? title,
     String? subtitle,
+    String? scanFailed,
     String Function(int seconds)? closingIn,
     Map<AntiVirtualSignal, String>? signals,
     TextDirection? textDirection,
   }) => AntiVirtualMessages(
     title: title ?? this.title,
     subtitle: subtitle ?? this.subtitle,
+    scanFailed: scanFailed ?? this.scanFailed,
     closingIn: closingIn ?? this.closingIn,
+    textDirection: textDirection ?? this.textDirection,
     signals: <AntiVirtualSignal, String>{...this.signals, ...?signals},
   );
 
   static const AntiVirtualMessages english = AntiVirtualMessages(
     title: 'This device can\'t be verified',
     subtitle: 'Please resolve the following and try again:',
+    scanFailed: 'We couldn\'t verify this device. Please try again.',
     closingIn: _closingEnglish,
     signals: <AntiVirtualSignal, String>{
       AntiVirtualSignal.vpn: 'A VPN is active. Turn it off to continue.',
@@ -83,6 +92,7 @@ class AntiVirtualMessages {
   static const AntiVirtualMessages arabic = AntiVirtualMessages(
     title: 'لا يمكن التحقق من هذا الجهاز',
     subtitle: 'يرجى معالجة ما يلي ثم المحاولة مرة أخرى:',
+    scanFailed: 'تعذّر التحقق من هذا الجهاز. يرجى المحاولة مرة أخرى.',
     closingIn: _closingArabic,
     textDirection: TextDirection.rtl,
     signals: <AntiVirtualSignal, String>{
@@ -113,6 +123,8 @@ class AntiVirtualMessages {
   static const AntiVirtualMessages french = AntiVirtualMessages(
     title: 'Cet appareil ne peut pas être vérifié',
     subtitle: 'Veuillez corriger les points suivants puis réessayer :',
+    scanFailed:
+        'Nous n\'avons pas pu vérifier cet appareil. Veuillez réessayer.',
     closingIn: _closingFrench,
     signals: <AntiVirtualSignal, String>{
       AntiVirtualSignal.vpn: 'Un VPN est actif. Désactivez-le pour continuer.',
@@ -140,6 +152,7 @@ class AntiVirtualMessages {
   static const AntiVirtualMessages spanish = AntiVirtualMessages(
     title: 'No se puede verificar este dispositivo',
     subtitle: 'Soluciona lo siguiente e inténtalo de nuevo:',
+    scanFailed: 'No pudimos verificar este dispositivo. Inténtalo de nuevo.',
     closingIn: _closingSpanish,
     signals: <AntiVirtualSignal, String>{
       AntiVirtualSignal.vpn: 'Hay una VPN activa. Desactívala para continuar.',

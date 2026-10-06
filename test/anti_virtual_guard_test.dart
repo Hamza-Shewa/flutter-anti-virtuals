@@ -483,9 +483,7 @@ void main() {
       expect(platform.scans, 2);
     });
 
-    testWidgets('a failed rescan fails open and cancels the countdown', (
-      tester,
-    ) async {
+    testWidgets('a failed rescan keeps the last known block', (tester) async {
       platform.detected = {AntiVirtualSignal.vpn};
       var exited = 0;
       Object? reported;
@@ -500,15 +498,257 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(find.byKey(appKey), findsNothing);
 
       platform.error = StateError('rescan failed');
       pauseAndResume(tester);
       await tester.pump();
       expect(reported, isA<StateError>());
+      expect(find.byKey(appKey, skipOffstage: false), findsNothing);
+      expect(find.text(AntiVirtualMessages.english.title), findsOneWidget);
+      await tester.pump(const Duration(seconds: 5));
+      expect(exited, 1); // still on the clock
+    });
+
+    testWidgets('errors are reported when there is no onError', (tester) async {
+      platform.error = StateError('no handler');
+      await tester.pumpWidget(app(const AntiVirtualGuard(child: appChild)));
+      await tester.pump();
+      expect(tester.takeException(), isA<StateError>());
+      expect(find.byKey(appKey), findsOneWidget); // first scan fails open
+    });
+
+    testWidgets('failClosed blocks when the first scan fails', (tester) async {
+      platform.error = StateError('hooked');
+      List<AntiVirtualSignal>? seen;
+      await tester.pumpWidget(
+        app(
+          AntiVirtualGuard(
+            failClosed: true,
+            onError: (_, _) {},
+            blockedBuilder: (context, matches) {
+              seen = matches;
+              return const Text('closed');
+            },
+            child: appChild,
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(seen, isEmpty);
+      expect(find.text('closed'), findsOneWidget);
+      expect(find.byKey(appKey, skipOffstage: false), findsNothing);
+    });
+
+    testWidgets('failClosed default screen explains the failure', (
+      tester,
+    ) async {
+      platform.error = StateError('hooked');
+      await tester.pumpWidget(
+        app(
+          AntiVirtualGuard(
+            failClosed: true,
+            locale: const Locale('en'),
+            onError: (_, _) {},
+            child: appChild,
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text(AntiVirtualMessages.english.scanFailed), findsOneWidget);
+      expect(find.text(AntiVirtualMessages.english.subtitle), findsNothing);
+    });
+
+    testWidgets('failClosed blocks a clean device when a rescan fails', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        app(
+          AntiVirtualGuard(
+            failClosed: true,
+            onError: (_, _) {},
+            child: appChild,
+          ),
+        ),
+      );
+      await tester.pump();
       expect(find.byKey(appKey), findsOneWidget);
+      platform.error = StateError('hooked');
+      pauseAndResume(tester);
+      await tester.pump();
+      expect(find.byKey(appKey), findsNothing);
+    });
+
+    testWidgets('inline ScanOptions do not rescan on parent rebuilds', (
+      tester,
+    ) async {
+      late StateSetter rebuild;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              return AntiVirtualGuard(
+                options: ScanOptions(checkSignatureMismatch: false),
+                child: appChild,
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+      for (var i = 0; i < 5; i++) {
+        rebuild(() {});
+        await tester.pump();
+      }
+      expect(platform.scans, 1);
+      expect(find.byKey(appKey), findsOneWidget);
+    });
+
+    testWidgets('rebuilds during scans do not starve the first result', (
+      tester,
+    ) async {
+      late StateSetter rebuild;
+      platform.gate = Completer<void>();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              return AntiVirtualGuard(
+                options: ScanOptions(checkSignatureMismatch: false),
+                child: appChild,
+              );
+            },
+          ),
+        ),
+      );
+      for (var i = 0; i < 3; i++) {
+        rebuild(() {});
+        await tester.pump();
+        final gate = platform.gate!;
+        platform.gate = Completer<void>();
+        gate.complete();
+        await tester.pump();
+      }
+      expect(find.byKey(appKey), findsOneWidget);
+    });
+
+    testWidgets('the shade or quick settings rescan once the scan is stale', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        app(
+          const AntiVirtualGuard(
+            rescanDebounce: Duration.zero,
+            child: appChild,
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.byKey(appKey), findsOneWidget);
+
+      platform.detected = {AntiVirtualSignal.vpn}; // toggled in quick settings
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(platform.scans, 2);
+      expect(find.byKey(appKey), findsNothing);
+    });
+
+    testWidgets('rescanInterval scans periodically while in the foreground', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        app(
+          const AntiVirtualGuard(
+            rescanInterval: Duration(seconds: 10),
+            child: appChild,
+          ),
+        ),
+      );
+      await tester.pump();
+      platform.detected = {AntiVirtualSignal.proxy};
       await tester.pump(const Duration(seconds: 10));
-      expect(exited, 0);
+      await tester.pump();
+      expect(platform.scans, 2);
+      expect(find.byKey(appKey), findsNothing);
+      goBackground(tester);
+      await tester.pump(const Duration(seconds: 30));
+      expect(platform.scans, 2); // not while backgrounded
+    });
+
+    testWidgets('forceExit still restarts when rescanOnResume is false', (
+      tester,
+    ) async {
+      platform.detected = {AntiVirtualSignal.vpn};
+      var exited = 0;
+      await tester.pumpWidget(
+        app(
+          AntiVirtualGuard(
+            forceExit: true,
+            rescanOnResume: false,
+            exitApp: () async => exited++,
+            child: appChild,
+          ),
+        ),
+      );
+      await tester.pump();
+      goBackground(tester);
+      goForeground(tester);
+      await tester.pump(const Duration(seconds: 10));
+      expect(exited, 1);
+    });
+
+    testWidgets('a locale change updates the default screen', (tester) async {
+      platform.detected = {AntiVirtualSignal.vpn};
+      await tester.pumpWidget(app(const AntiVirtualGuard(child: appChild)));
+      await tester.pump();
+      expect(find.text(AntiVirtualMessages.english.title), findsOneWidget);
+      tester.platformDispatcher.localesTestValue = const [Locale('fr')];
+      addTearDown(tester.platformDispatcher.clearLocalesTestValue);
+      await tester.pump();
+      expect(find.text(AntiVirtualMessages.french.title), findsOneWidget);
+    });
+
+    testWidgets('unmountWhileBlocked removes the app and restores it', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        app(
+          const AntiVirtualGuard(
+            unmountWhileBlocked: true,
+            rescanDebounce: Duration.zero,
+            child: appChild,
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.byKey(appKey), findsOneWidget);
+      platform.detected = {AntiVirtualSignal.vpn};
+      goBackground(tester);
+      goForeground(tester);
+      await tester.pump();
+      expect(find.byKey(appKey, skipOffstage: false), findsNothing);
+      platform.detected = {};
+      goBackground(tester);
+      goForeground(tester);
+      await tester.pump();
+      expect(find.byKey(appKey), findsOneWidget);
+    });
+
+    testWidgets('waitForScan switched off mid-scan shows the app', (
+      tester,
+    ) async {
+      platform.gate = Completer<void>();
+      Widget build(bool wait) =>
+          app(AntiVirtualGuard(waitForScan: wait, child: appChild));
+      await tester.pumpWidget(build(true));
+      await tester.pump();
+      expect(find.byKey(appKey), findsNothing);
+      await tester.pumpWidget(build(false));
+      expect(find.byKey(appKey), findsOneWidget);
+      platform.gate!.complete();
+      await tester.pump();
     });
 
     testWidgets('brief interruptions do not rescan', (tester) async {
@@ -563,6 +803,19 @@ void main() {
       expect(forN(5), contains('5 ثوانٍ'));
       expect(forN(10), contains('10 ثوانٍ'));
       expect(forN(11), contains('11 ثانية'));
+    });
+
+    test('copyWith keeps and can override the text direction', () {
+      expect(
+        AntiVirtualMessages.arabic.copyWith(title: 'x').textDirection,
+        TextDirection.rtl,
+      );
+      expect(
+        AntiVirtualMessages.english
+            .copyWith(textDirection: TextDirection.rtl)
+            .textDirection,
+        TextDirection.rtl,
+      );
     });
 
     test('supported languages come from the shipped messages', () {

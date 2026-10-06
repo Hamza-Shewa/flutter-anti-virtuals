@@ -138,6 +138,20 @@ void main() {
       );
     });
 
+    test('options compare by value', () {
+      expect(ScanOptions(), ScanOptions());
+      expect(ScanOptions().hashCode, ScanOptions().hashCode);
+      expect(
+        ScanOptions(expectedSignatureSha256: ['aa']),
+        ScanOptions(expectedSignatureSha256: ['aa']),
+      );
+      expect(ScanOptions(checkVpn: false), isNot(ScanOptions()));
+      expect(
+        ScanOptions(maxClockSkew: const Duration(seconds: 1)),
+        isNot(ScanOptions()),
+      );
+    });
+
     test('onlyChecking keeps configuration and disables the rest', () {
       final only = ScanOptions(
         expectedSignatureSha256: ['aa'],
