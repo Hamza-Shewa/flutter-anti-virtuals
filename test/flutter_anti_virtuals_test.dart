@@ -97,7 +97,7 @@ void main() {
         .setMockMethodCallHandler(channel, (call) async {
           throw PlatformException(code: 'boom');
         });
-    expect(
+    await expectLater(
       FlutterAntiVirtuals.instance.scan(),
       throwsA(isA<PlatformException>()),
     );

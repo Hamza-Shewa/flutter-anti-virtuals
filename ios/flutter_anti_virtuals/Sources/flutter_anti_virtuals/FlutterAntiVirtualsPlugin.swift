@@ -70,14 +70,16 @@ final class AntiVirtualScanner {
   }
 
   private func vpn() -> Detection {
-    // Only `tap`, `tun` and `ppp` scoped interfaces count. `ipsec*` is kept up by
-    // Wi-Fi Calling / VoLTE and `utun3+` by Private Relay and Continuity, so those
-    // would flag ordinary iPhones. VPNs that only use utun are therefore not seen.
+    // Only interfaces listed under `__SCOPED__` count. The system's own tunnels
+    // (Wi-Fi Calling / VoLTE `ipsec*`, Private Relay and Continuity `utun*`) are up
+    // without a scoped network configuration, so they are not listed there, while a
+    // connected VPN is: NetworkExtension VPNs as `utun*`, built-in IKEv2 as `ipsec*`.
+    // Scanning every interface with getifaddrs would flag those system tunnels.
     var details: [String] = []
     if let settings = CFNetworkCopySystemProxySettings()?.takeRetainedValue() as? [String: Any],
       let scoped = settings["__SCOPED__"] as? [String: Any]
     {
-      for key in scoped.keys where ["tap", "tun", "ppp"].contains(where: key.hasPrefix) {
+      for key in scoped.keys where ["tap", "tun", "utun", "ppp", "ipsec"].contains(where: key.hasPrefix) {
         details.append("interface \(key)")
       }
     }

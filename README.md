@@ -26,7 +26,7 @@ if (report.hasAny({
 
 | Signal | Android | iOS | How |
 | --- | --- | --- | --- |
-| `vpn` | yes | yes | VPN transport, `tun`/`ppp`/`tap`/`wg` interfaces (iOS: scoped `tap`/`tun`/`ppp` only; utun-based VPNs are not distinguishable from system tunnels) |
+| `vpn` | yes | yes | VPN transport, `tun`/`ppp`/`tap`/`wg` interfaces (iOS: `utun`/`ipsec`/`tap`/`tun`/`ppp` entries in the scoped network settings, which system tunnels such as Private Relay and Wi-Fi Calling do not appear in) |
 | `proxy` | yes | yes | Per-network proxy, PAC file, JVM proxy properties |
 | `mockLocation` | yes | iOS 15+ | `Location.isMock` (needs granted location permission), known mock apps; iOS `isSimulatedBySoftware` |
 | `virtualCamera` | partial | iOS 17+ | Known virtual-camera apps, external cameras |
@@ -56,3 +56,7 @@ not visible to these checks.
 
 For mock-location results to include `isMock`, the host app needs location
 permission already granted; the plugin never asks for it.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
