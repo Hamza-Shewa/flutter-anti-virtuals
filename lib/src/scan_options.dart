@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show listEquals;
+
 import 'signal.dart';
 
 /// Configures a scan.
@@ -116,6 +118,58 @@ class ScanOptions {
   /// Authoritative time, normally taken from a server response. Without it the
   /// clock check only looks at the automatic-time settings.
   final DateTime? trustedTime;
+
+  /// Value equality, so an inline `ScanOptions(...)` in a `build` method is
+  /// equal to the previous one and does not look like a configuration change.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ScanOptions &&
+          other.checkVpn == checkVpn &&
+          other.checkProxy == checkProxy &&
+          other.checkMockLocation == checkMockLocation &&
+          other.checkVirtualCamera == checkVirtualCamera &&
+          other.checkDeveloperOptions == checkDeveloperOptions &&
+          other.checkAdb == checkAdb &&
+          other.checkClockTampering == checkClockTampering &&
+          other.checkUntrustedInstaller == checkUntrustedInstaller &&
+          other.checkSignatureMismatch == checkSignatureMismatch &&
+          other.checkAccessibilityAbuse == checkAccessibilityAbuse &&
+          other.checkRemoteControlApp == checkRemoteControlApp &&
+          other.checkClonedApp == checkClonedApp &&
+          other.checkUserCertificates == checkUserCertificates &&
+          other.checkSideloaded == checkSideloaded &&
+          listEquals(other.expectedSignatureSha256, expectedSignatureSha256) &&
+          listEquals(other.trustedInstallers, trustedInstallers) &&
+          listEquals(
+            other.allowedAccessibilityServices,
+            allowedAccessibilityServices,
+          ) &&
+          other.maxClockSkew == maxClockSkew &&
+          other.trustedTime == trustedTime;
+
+  @override
+  int get hashCode => Object.hashAll(<Object?>[
+    checkVpn,
+    checkProxy,
+    checkMockLocation,
+    checkVirtualCamera,
+    checkDeveloperOptions,
+    checkAdb,
+    checkClockTampering,
+    checkUntrustedInstaller,
+    checkSignatureMismatch,
+    checkAccessibilityAbuse,
+    checkRemoteControlApp,
+    checkClonedApp,
+    checkUserCertificates,
+    checkSideloaded,
+    Object.hashAll(expectedSignatureSha256),
+    Object.hashAll(trustedInstallers),
+    Object.hashAll(allowedAccessibilityServices),
+    maxClockSkew,
+    trustedTime,
+  ]);
 
   /// The signals this configuration will evaluate.
   Set<AntiVirtualSignal> get enabledSignals => <AntiVirtualSignal>{

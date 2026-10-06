@@ -24,6 +24,51 @@ if (report.hasAny({
 }
 ```
 
+## Block the app at startup
+
+`AntiVirtualGuard` runs a scan when the app starts (and again every time it
+returns to the foreground) and covers your app with a blocking screen while a
+blocking signal is detected. Put it in `MaterialApp.builder`:
+
+```dart
+MaterialApp(
+  builder: (context, child) => AntiVirtualGuard(
+    options: ScanOptions(expectedSignatureSha256: ['<release cert sha256>']),
+    child: child!,
+  ),
+  home: const HomePage(),
+)
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `blockOn` | `vpn`, `proxy`, `mockLocation`, `virtualCamera`, `signatureMismatch` | Detections that block. Others (developer options, installer, ...) only reach `onReport` |
+| `blockedBuilder` | built-in screen | `(context, matches)` where `matches` is e.g. `[vpn, mockLocation]`, so you can write your own text |
+| `messages` / `locale` | device language | Text of the built-in screen. Ships English, Arabic (RTL), French and Spanish, falling back to English; `AntiVirtualMessages.english.copyWith(...)` overrides single strings. Apps with their own language switch pass `locale: Localizations.localeOf(context)` |
+| `forceExit` | `false` | Close the app after `forceExitAfter`. The countdown pauses while the app is in the background and restarts on return if the problem is still there |
+| `forceExitAfter` | 5 seconds | Delay before the app exits. The built-in screen shows a countdown |
+| `waitForScan` / `loadingBuilder` | `true` | The app is not built until the first scan is clean |
+| `rescanOnResume` | `true` | Scan again when the app returns to the foreground. Coming back from the background always rescans; a shorter interruption (notification shade, quick settings, Control Center, permission dialog) rescans when the last scan is older than `rescanDebounce` (3 seconds), so a VPN switched on from quick settings is caught. If the problem is gone the app is shown again and the exit is cancelled |
+| `rescanInterval` | `null` | Also scan this often while in the foreground |
+| `failClosed` | `false` | Block when a scan fails. The built-in screen then says the device could not be verified and `blockedBuilder` gets an empty list. Without it a failing first scan lets the app through and a failed rescan keeps the previous result, so backgrounding the app cannot be used to clear a block |
+| `unmountWhileBlocked` | `true` | Remove the app from the tree while blocked, so the Android back button and deep links cannot reach it (a widget above the `Navigator` cannot intercept them). Its state is lost and it is rebuilt when the block clears. Pass `false` to keep it mounted and hidden instead |
+| `hardExit` | `false` | Android: end the process with `exit(0)` instead of `SystemNavigator.pop()` |
+| `onReport`, `onError` | none | Every completed scan; scan failures (reported through `FlutterError.reportError` when `onError` is not set) |
+
+The app is not built until the first scan is clean. While blocked it is
+removed from the tree and rebuilt with fresh state when the block clears; with
+`unmountWhileBlocked: false` it stays mounted (state kept) but hidden, without
+focus and with animations paused. Code outside the widget tree (`main()`, network
+calls already started) is not stopped. Changing `options`, `blockOn` or
+`forceExit` later takes effect.
+
+**Force exit on iOS:** Apple's App Review Guidelines discourage apps from
+quitting themselves, so `forceExit` can get an app rejected from the App
+Store. It is off by default. On Android it calls `SystemNavigator.pop()`,
+which finishes the activity but can leave the process running (or return to
+the previous activity); set `hardExit` to end the process. On iOS it calls
+`exit(0)`.
+
 ## Choosing checks
 
 `ScanOptions` has one boolean per signal (`checkVpn`, `checkProxy`,
