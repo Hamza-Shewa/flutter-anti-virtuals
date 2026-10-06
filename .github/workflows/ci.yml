@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dart:
+    name: Analyze and test (Dart)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart format --output=none --set-exit-if-changed lib test
+      - run: flutter analyze
+      - run: flutter test
+      - name: Example
+        working-directory: example
+        run: |
+          flutter pub get
+          flutter analyze
+      - name: Publish dry run
+        run: dart pub publish --dry-run
+
+  android:
+    name: Build and unit-test (Android)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+      - name: Build the example app (compiles the Kotlin plugin)
+        working-directory: example
+        run: |
+          flutter pub get
+          flutter build apk --debug
+      - name: Kotlin unit tests
+        run: gradle --project-dir example/android :flutter_anti_virtuals:testDebugUnitTest
+
+  ios:
+    name: Build (iOS)
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Build the example app for a device (compiles the Swift plugin)
+        working-directory: example
+        run: |
+          flutter pub get
+          flutter build ios --debug --no-codesign
+      - name: Build the example app for the Simulator
+        working-directory: example
+        run: flutter build ios --simulator --debug
