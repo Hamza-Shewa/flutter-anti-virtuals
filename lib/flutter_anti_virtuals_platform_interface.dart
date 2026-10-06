@@ -6,6 +6,7 @@ import 'flutter_anti_virtuals_method_channel.dart';
 import 'src/report.dart';
 import 'src/scan_options.dart';
 import 'src/screen_protection.dart';
+import 'src/signed_report.dart';
 
 abstract class FlutterAntiVirtualsPlatform extends PlatformInterface {
   FlutterAntiVirtualsPlatform() : super(token: _token);
@@ -32,6 +33,13 @@ abstract class FlutterAntiVirtualsPlatform extends PlatformInterface {
   /// platform has no such protection.
   Future<bool> setScreenProtection(ScreenProtectionOptions? options) async =>
       false;
+
+  /// Signs [payload] (UTF-8) with a key created on the device for this one
+  /// request. On Android the key carries a hardware attestation whose
+  /// challenge is the SHA-256 of [nonce] where the device supports it.
+  Future<DeviceSignature> signPayload(String nonce, String payload) {
+    throw UnimplementedError('signPayload() has not been implemented.');
+  }
 
   /// Emits whenever the network setup changes in a way that can turn a VPN or
   /// proxy on or off. Platforms without live monitoring never emit.

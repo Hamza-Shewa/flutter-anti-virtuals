@@ -87,6 +87,29 @@ class FlutterAntiVirtualsPlugin : FlutterPlugin, ActivityAware, MethodCallHandle
                     mainHandler.post { result.success(report) }
                 }
             }
+            "signPayload" -> {
+                val args = call.arguments as? Map<String, Any?>
+                val nonce = args?.get("nonce") as? String
+                val payload = args?.get("payload") as? String
+                val executor = worker
+                if (nonce == null || payload == null) {
+                    result.error("bad_arguments", "nonce and payload are required", null)
+                    return
+                }
+                if (executor == null) {
+                    result.error("detached", "Plugin is not attached to an engine", null)
+                    return
+                }
+                // Key generation can take a while on secure hardware.
+                executor.execute {
+                    try {
+                        val signed = DeviceKey.sign(nonce, payload.toByteArray(Charsets.UTF_8))
+                        mainHandler.post { result.success(signed) }
+                    } catch (e: Exception) {
+                        mainHandler.post { result.error("sign_failed", e.message, null) }
+                    }
+                }
+            }
             "setScreenProtection" -> {
                 val config = ScreenProtectionConfig.from(call.arguments as? Map<String, Any?>)
                 result.success(protector.apply(config))
