@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+* New `hooked` and `debugger` signals (`checkHooked`, `checkDebugger`, on by
+  default, not blocking by default). `hooked`: Frida and Xposed/LSPosed/
+  EdXposed/Substrate libraries in the process, Frida threads, hooking classes,
+  managers and files, a hooked plugin method (framework frames in its own call
+  stack) and the default Frida server port (Android); injected libraries,
+  hooking classes, `DYLD_INSERT_LIBRARIES` and the Frida port (iOS).
+  `debugger`: a Java debugger, `TracerPid` (Android), `P_TRACED` (iOS).
 * New `rooted` signal (`ScanOptions.checkRooted`, on by default) for Android
   root and iOS jailbreak. Android: one strong indicator (`su`/Magisk binaries
   in `PATH` and the usual directories, root manager and root-hiding apps, root

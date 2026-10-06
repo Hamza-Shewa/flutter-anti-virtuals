@@ -78,7 +78,10 @@ class AntiVirtualGuard extends StatefulWidget {
   /// development; add it in release builds (`if (kReleaseMode)`).
   /// [AntiVirtualSignal.rooted] is left out too, because blocking every rooted
   /// or jailbroken device locks out legitimate users in some markets; add it
-  /// when your app needs to refuse them.
+  /// when your app needs to refuse them. [AntiVirtualSignal.hooked] and
+  /// [AntiVirtualSignal.debugger] are left out as well: a debug build run from
+  /// your IDE has a debugger attached, and a hook is a strong signal that you
+  /// may prefer to send to your server instead of blocking on the device.
   static const Set<AntiVirtualSignal> defaultBlockingSignals =
       <AntiVirtualSignal>{
         AntiVirtualSignal.vpn,

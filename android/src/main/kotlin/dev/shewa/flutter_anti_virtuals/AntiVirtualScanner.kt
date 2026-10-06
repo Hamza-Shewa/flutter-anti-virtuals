@@ -16,6 +16,7 @@ import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
+import android.os.Debug
 import android.os.Process
 import android.os.SystemClock
 import android.provider.Settings
@@ -68,7 +69,9 @@ internal class AntiVirtualScanner(private val context: Context) {
             "userCertificates" to ::userCertificates,
             "sideloaded" to { Detection.unsupported },
             "emulator" to ::emulator,
-            "rooted" to ::rooted
+            "rooted" to ::rooted,
+            "hooked" to ::hooked,
+            "debugger" to ::debugger
         )
         return checks
             .filterKeys { config.signals == null || it in config.signals }
@@ -328,6 +331,40 @@ internal class AntiVirtualScanner(private val context: Context) {
     }
 
     private fun exists(path: String): Boolean = try { File(path).exists() } catch (_: Throwable) { false }
+
+    // ---- hooks and debugger ----------------------------------------------
+
+    private fun hooked(): Detection {
+        val evidence = HookEvidence(
+            mapsLines = try { File("/proc/self/maps").readLines() } catch (_: Throwable) { null },
+            threadNames = try {
+                File("/proc/self/task").listFiles().orEmpty()
+                    .mapNotNull { try { File(it, "comm").readText().trim() } catch (_: Throwable) { null } }
+                    .toSet()
+            } catch (_: Throwable) { emptySet() },
+            loadedClasses = HookRules.CLASSES.filter { name ->
+                try { Class.forName(name, false, javaClass.classLoader); true } catch (_: Throwable) { false }
+            }.toSet(),
+            // A hooked method of the plugin shows the hooking framework in its own call stack.
+            stackClassNames = Throwable().stackTrace.map { it.className },
+            installedPackages = installed(KnownPackages.hooking).toSet(),
+            existingFiles = HookRules.FILES.filter { exists(it) }.toSet(),
+            fridaPortOpen = portOpen(HookRules.FRIDA_PORT)
+        )
+        return Detection.of(HookRules.details(evidence))
+    }
+
+    /** Needs the INTERNET permission, which the host app normally has; without it this is false. */
+    private fun portOpen(port: Int): Boolean = try {
+        java.net.Socket().use { it.connect(java.net.InetSocketAddress("127.0.0.1", port), 200); true }
+    } catch (_: Throwable) { false }
+
+    private fun debugger(): Detection {
+        val status = try { File("/proc/self/status").readText() } catch (_: Throwable) { null }
+        return Detection.of(
+            DebuggerRules.details(Debug.isDebuggerConnected(), Debug.waitingForDebugger(), status)
+        )
+    }
 
     /** Reads system properties through the hidden `SystemProperties`, falling back to `getprop`. */
     private fun systemProperties(keys: List<String>): Map<String, String> {

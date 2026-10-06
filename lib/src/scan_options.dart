@@ -19,6 +19,8 @@ class ScanOptions {
     this.checkVirtualCamera = true,
     this.checkEmulator = true,
     this.checkRooted = true,
+    this.checkHooked = true,
+    this.checkDebugger = true,
     this.checkDeveloperOptions = true,
     this.checkAdb = true,
     this.checkClockTampering = true,
@@ -76,6 +78,14 @@ class ScanOptions {
   /// partition, ...) or an iOS jailbreak (Cydia, Sileo, /var/jb, writing
   /// outside the sandbox, ...).
   final bool checkRooted;
+
+  /// Instrumentation frameworks in the app process: Frida (libraries, threads,
+  /// the default server port), Xposed/LSPosed/EdXposed, Substrate and similar.
+  final bool checkHooked;
+
+  /// A debugger attached to the process (Java debugger, `TracerPid`,
+  /// iOS `P_TRACED`). A debug build run from your IDE reports it too.
+  final bool checkDebugger;
 
   /// Android developer options enabled.
   final bool checkDeveloperOptions;
@@ -142,6 +152,8 @@ class ScanOptions {
           other.checkVirtualCamera == checkVirtualCamera &&
           other.checkEmulator == checkEmulator &&
           other.checkRooted == checkRooted &&
+          other.checkHooked == checkHooked &&
+          other.checkDebugger == checkDebugger &&
           other.checkDeveloperOptions == checkDeveloperOptions &&
           other.checkAdb == checkAdb &&
           other.checkClockTampering == checkClockTampering &&
@@ -169,6 +181,8 @@ class ScanOptions {
     checkVirtualCamera,
     checkEmulator,
     checkRooted,
+    checkHooked,
+    checkDebugger,
     checkDeveloperOptions,
     checkAdb,
     checkClockTampering,
@@ -194,6 +208,8 @@ class ScanOptions {
     if (checkVirtualCamera) AntiVirtualSignal.virtualCamera,
     if (checkEmulator) AntiVirtualSignal.emulator,
     if (checkRooted) AntiVirtualSignal.rooted,
+    if (checkHooked) AntiVirtualSignal.hooked,
+    if (checkDebugger) AntiVirtualSignal.debugger,
     if (checkDeveloperOptions) AntiVirtualSignal.developerOptions,
     if (checkAdb) AntiVirtualSignal.adb,
     if (checkClockTampering) AntiVirtualSignal.clockTampering,
@@ -215,6 +231,8 @@ class ScanOptions {
     checkVirtualCamera: signal == AntiVirtualSignal.virtualCamera,
     checkEmulator: signal == AntiVirtualSignal.emulator,
     checkRooted: signal == AntiVirtualSignal.rooted,
+    checkHooked: signal == AntiVirtualSignal.hooked,
+    checkDebugger: signal == AntiVirtualSignal.debugger,
     checkDeveloperOptions: signal == AntiVirtualSignal.developerOptions,
     checkAdb: signal == AntiVirtualSignal.adb,
     checkClockTampering: signal == AntiVirtualSignal.clockTampering,

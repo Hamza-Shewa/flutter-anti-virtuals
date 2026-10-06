@@ -76,6 +76,10 @@ class AntiVirtualMessages {
           'This app is running on an emulator or simulator. Use a real device to continue.',
       AntiVirtualSignal.rooted:
           'This device is rooted or jailbroken. Use an unmodified device to continue.',
+      AntiVirtualSignal.hooked:
+          'A hooking or instrumentation tool was detected in this app. Remove it to continue.',
+      AntiVirtualSignal.debugger:
+          'A debugger is attached to this app. Detach it to continue.',
       AntiVirtualSignal.developerOptions: 'Developer options are turned on.',
       AntiVirtualSignal.adb: 'USB or wireless debugging is turned on.',
       AntiVirtualSignal.clockTampering:
@@ -114,6 +118,10 @@ class AntiVirtualMessages {
           'التطبيق يعمل على محاكي. استخدم جهازًا حقيقيًا للمتابعة.',
       AntiVirtualSignal.rooted:
           'تم اكتشاف روت أو جلبريك على هذا الجهاز. استخدم جهازًا غير معدَّل للمتابعة.',
+      AntiVirtualSignal.hooked:
+          'تم اكتشاف أداة حقن أو تتبّع في هذا التطبيق. أزلها للمتابعة.',
+      AntiVirtualSignal.debugger:
+          'يوجد مصحّح أخطاء متصل بهذا التطبيق. افصله للمتابعة.',
       AntiVirtualSignal.developerOptions: 'خيارات المطوّر مفعّلة.',
       AntiVirtualSignal.adb: 'تصحيح أخطاء USB أو اللاسلكي مفعّل.',
       AntiVirtualSignal.clockTampering:
@@ -151,6 +159,10 @@ class AntiVirtualMessages {
           "L'application s'exécute sur un émulateur ou un simulateur. Utilisez un appareil réel pour continuer.",
       AntiVirtualSignal.rooted:
           "Cet appareil est rooté ou jailbreaké. Utilisez un appareil non modifié pour continuer.",
+      AntiVirtualSignal.hooked:
+          "Un outil d'instrumentation ou de hooking a été détecté dans cette application. Supprimez-le pour continuer.",
+      AntiVirtualSignal.debugger:
+          "Un débogueur est attaché à cette application. Détachez-le pour continuer.",
       AntiVirtualSignal.developerOptions:
           'Les options pour les développeurs sont activées.',
       AntiVirtualSignal.adb: 'Le débogage USB ou sans fil est activé.',
@@ -190,6 +202,10 @@ class AntiVirtualMessages {
           'La aplicación se ejecuta en un emulador o simulador. Usa un dispositivo real para continuar.',
       AntiVirtualSignal.rooted:
           'Este dispositivo tiene root o jailbreak. Usa un dispositivo sin modificar para continuar.',
+      AntiVirtualSignal.hooked:
+          'Se detectó una herramienta de hooking o instrumentación en esta aplicación. Elimínala para continuar.',
+      AntiVirtualSignal.debugger:
+          'Hay un depurador conectado a esta aplicación. Desconéctalo para continuar.',
       AntiVirtualSignal.developerOptions:
           'Las opciones de desarrollador están activadas.',
       AntiVirtualSignal.adb: 'La depuración USB o inalámbrica está activada.',

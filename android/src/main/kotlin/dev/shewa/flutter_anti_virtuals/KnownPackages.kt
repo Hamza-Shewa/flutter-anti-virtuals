@@ -142,4 +142,16 @@ internal object KnownPackages {
         "com.formyhm.hideroot",
         "com.formyhm.hiderootPremium"
     )
+
+    /** Hooking frameworks and their managers. */
+    val hooking = setOf(
+        "org.lsposed.manager",
+        "io.github.lsposed.manager",
+        "org.lsposed.lspatch",
+        "org.meowcat.edxposed.manager",
+        "com.solohsu.android.edxp.manager",
+        "de.robv.android.xposed.installer",
+        "com.saurik.substrate",
+        "me.weishu.exp"
+    )
 }
