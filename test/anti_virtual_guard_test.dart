@@ -13,7 +13,11 @@ class _FakePlatform extends FlutterAntiVirtualsPlatform
   Object? error;
   int scans = 0;
   Completer<void>? gate;
-  final changes = StreamController<void>.broadcast(sync: true);
+  int listens = 0;
+  late final changes = StreamController<void>.broadcast(
+    sync: true,
+    onListen: () => listens++,
+  );
 
   @override
   Stream<void> get environmentChanges => changes.stream;
@@ -858,7 +862,7 @@ void main() {
         expect(find.byKey(appKey, skipOffstage: false), findsNothing);
       });
 
-      testWidgets('a missing event channel is ignored, other errors reported', (
+      testWidgets('a failing watcher is reported as such and retried', (
         tester,
       ) async {
         final errors = <Object>[];
@@ -871,13 +875,67 @@ void main() {
           ),
         );
         await tester.pump();
-        platform.changes.addError(MissingPluginException());
-        await tester.pump();
-        expect(errors, isEmpty);
+        expect(platform.listens, 1);
         platform.changes.addError(PlatformException(code: 'watch_failed'));
         await tester.pump();
         expect(errors.single, isA<PlatformException>());
         expect(find.byKey(appKey), findsOneWidget);
+        await tester.pump(const Duration(seconds: 31));
+        expect(platform.listens, 2);
+        expect(platform.changes.hasListener, isTrue);
+      });
+
+      testWidgets('without onError a watcher failure is a Flutter error', (
+        tester,
+      ) async {
+        final reported = <FlutterErrorDetails>[];
+        final previous = FlutterError.onError;
+        FlutterError.onError = reported.add;
+        addTearDown(() => FlutterError.onError = previous);
+        await tester.pumpWidget(app(const AntiVirtualGuard(child: appChild)));
+        await tester.pump();
+        platform.changes.addError(PlatformException(code: 'watch_failed'));
+        await tester.pump();
+        expect(reported.single.exception, isA<PlatformException>());
+        expect(
+          reported.single.context.toString(),
+          contains('monitoring network changes'),
+        );
+      });
+
+      testWidgets('a change in the background is scanned on resume even '
+          'without rescanOnResume', (tester) async {
+        await tester.pumpWidget(
+          app(const AntiVirtualGuard(rescanOnResume: false, child: appChild)),
+        );
+        await tester.pump();
+        goBackground(tester);
+        platform.detected = {AntiVirtualSignal.vpn};
+        platform.changes.add(null);
+        await settle(tester);
+        expect(platform.scans, 1);
+        goForeground(tester);
+        await tester.pump();
+        expect(platform.scans, 2);
+        expect(find.byKey(appKey, skipOffstage: false), findsNothing);
+        // Only once: a plain background trip still does not rescan.
+        goBackground(tester);
+        goForeground(tester);
+        await tester.pump();
+        expect(platform.scans, 2);
+      });
+
+      testWidgets('a flapping network cannot postpone the scan forever', (
+        tester,
+      ) async {
+        await tester.pumpWidget(app(const AntiVirtualGuard(child: appChild)));
+        await tester.pump();
+        // Events every 300 ms never let the 500 ms debounce expire.
+        for (var i = 0; i < 8; i++) {
+          platform.changes.add(null);
+          await tester.pump(const Duration(milliseconds: 300));
+        }
+        expect(platform.scans, greaterThan(1));
       });
 
       testWidgets('stops listening when removed', (tester) async {

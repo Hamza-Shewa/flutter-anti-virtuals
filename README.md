@@ -49,7 +49,7 @@ MaterialApp(
 | `forceExitAfter` | 5 seconds | Delay before the app exits. The built-in screen shows a countdown |
 | `waitForScan` / `loadingBuilder` | `true` | The app is not built until the first scan is clean |
 | `rescanOnResume` | `true` | Scan again when the app returns to the foreground. Coming back from the background always rescans; a shorter interruption (notification shade, quick settings, Control Center, permission dialog) rescans when the last scan is older than `rescanDebounce` (3 seconds), so a VPN switched on from quick settings is caught. If the problem is gone the app is shown again and the exit is cancelled |
-| `liveMonitoring` | `true` | Scan as soon as the network changes, so a VPN or proxy switched on while the app is in front is caught right away. Android listens to `ConnectivityManager` for VPN transport and proxy changes, iOS to `NWPathMonitor`. A change while the app is in the background is covered by the rescan on resume. Mock location and cameras have no change notification, so they wait for the next rescan. iOS does not report a changed proxy setting live |
+| `liveMonitoring` | `true` | Scan as soon as the network changes, so a VPN or proxy switched on while the app is in front is caught right away. Android listens to `ConnectivityManager` for VPN transport and proxy changes, iOS to `NWPathMonitor` (every path update counts). A failing watcher is reported through `onError` and retried after 30 seconds. A change while the app is in the background is scanned on resume, even with `rescanOnResume: false`. Mock location and cameras have no change notification, so they wait for the next rescan. iOS does not report a changed proxy setting live |
 | `liveDebounce` | 500 ms | Wait after a change before scanning, so a burst of changes (a VPN coming up) causes one scan |
 | `rescanInterval` | `null` | Also scan this often while in the foreground |
 | `failClosed` | `false` | Block when a scan fails. The built-in screen then says the device could not be verified and `blockedBuilder` gets an empty list. Without it a failing first scan lets the app through and a failed rescan keeps the previous result, so backgrounding the app cannot be used to clear a block |
@@ -74,7 +74,11 @@ the previous activity); set `hardExit` to end the process. On iOS it calls
 The stream behind it is public: `FlutterAntiVirtuals.instance.environmentChanges`
 emits when the network setup changes (it carries no data, call `scan()` to find
 out what changed) and nothing for the state that exists when you start
-listening.
+listening. It is one shared stream, so any number of listeners (several
+guards, your own code) can use it. Where the native side is missing, for
+example in a widget test that only mocks the `flutter_anti_virtuals` method
+channel, it simply never emits. A scan is started at most `liveDebounce` x 4
+after the first change of a burst, so a flapping network cannot postpone it.
 
 ## Choosing checks
 

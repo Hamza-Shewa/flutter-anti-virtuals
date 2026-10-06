@@ -208,7 +208,12 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
   Timer? _tickTimer;
   Timer? _intervalTimer;
   Timer? _liveTimer;
+  Timer? _liveMaxTimer;
+  Timer? _liveRetryTimer;
   StreamSubscription<void>? _liveSubscription;
+  // A network change that arrived while the app was in the background: scanned
+  // on resume whatever [AntiVirtualGuard.rescanOnResume] says.
+  bool _liveChangePending = false;
   int _remaining = 0;
 
   late ScanOptions _options = widget.options ?? ScanOptions();
@@ -256,7 +261,8 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     WidgetsBinding.instance.removeObserver(this);
     _cancelExit();
     _intervalTimer?.cancel();
-    _liveTimer?.cancel();
+    _cancelLiveTimers();
+    _liveRetryTimer?.cancel();
     _liveSubscription?.cancel();
     super.dispose();
   }
@@ -282,7 +288,9 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
         final stale =
             _lastScanAt == null ||
             DateTime.now().difference(_lastScanAt!) >= widget.rescanDebounce;
-        if (widget.rescanOnResume && (_wasBackgrounded || stale)) {
+        final changed = _liveChangePending;
+        _liveChangePending = false;
+        if (changed || (widget.rescanOnResume && (_wasBackgrounded || stale))) {
           _scan();
         } else {
           // No rescan to restart the countdown for us.
@@ -305,28 +313,52 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
   }
 
   void _syncLive() {
-    _liveTimer?.cancel();
-    _liveTimer = null;
+    _cancelLiveTimers();
+    _liveRetryTimer?.cancel();
+    _liveRetryTimer = null;
     _liveSubscription?.cancel();
     _liveSubscription = null;
     if (!widget.liveMonitoring) return;
     _liveSubscription = FlutterAntiVirtualsPlatform.instance.environmentChanges
-        .listen(
-          (_) {
-            if (!_foreground) return; // Resume rescans after a background trip.
-            _liveTimer?.cancel();
-            _liveTimer = Timer(widget.liveDebounce, () {
-              if (mounted && _foreground) _scan();
-            });
-          },
-          // Best effort: a platform without the event channel must not break
-          // the guard, and the other rescans still run.
-          onError: (Object error, StackTrace stackTrace) {
-            if (error is! MissingPluginException) {
-              _reportError(error, stackTrace);
-            }
-          },
-        );
+        .listen(_onNetworkChange, onError: _onLiveError);
+  }
+
+  void _cancelLiveTimers() {
+    _liveTimer?.cancel();
+    _liveTimer = null;
+    _liveMaxTimer?.cancel();
+    _liveMaxTimer = null;
+  }
+
+  void _onNetworkChange(void _) {
+    if (!_foreground) {
+      _liveChangePending = true; // Scanned on resume.
+      return;
+    }
+    // Wait for a burst to settle, but never longer than a few debounce periods
+    // after its first event, so a flapping network cannot postpone the scan.
+    _liveTimer?.cancel();
+    _liveTimer = Timer(widget.liveDebounce, _liveScan);
+    _liveMaxTimer ??= Timer(widget.liveDebounce * 4, _liveScan);
+  }
+
+  void _liveScan() {
+    _cancelLiveTimers();
+    if (!mounted) return;
+    if (_foreground) {
+      _scan();
+    } else {
+      _liveChangePending = true;
+    }
+  }
+
+  // Live monitoring is best effort: the other rescans still run. A native side
+  // that could not start watching (for example a callback limit) is retried
+  // later instead of staying off for the life of the widget.
+  void _onLiveError(Object error, StackTrace stackTrace) {
+    _reportError(error, stackTrace, 'while monitoring network changes');
+    _liveRetryTimer?.cancel();
+    _liveRetryTimer = Timer(const Duration(seconds: 30), _syncLive);
   }
 
   Future<void> _scan() async {
@@ -386,7 +418,11 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     _syncExit();
   }
 
-  void _reportError(Object error, StackTrace stackTrace) {
+  void _reportError(
+    Object error,
+    StackTrace stackTrace, [
+    String context = 'while scanning the device',
+  ]) {
     final onError = widget.onError;
     if (onError == null) {
       FlutterError.reportError(
@@ -394,7 +430,7 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
           exception: error,
           stack: stackTrace,
           library: 'flutter_anti_virtuals',
-          context: ErrorDescription('while scanning the device'),
+          context: ErrorDescription(context),
         ),
       );
       return;

@@ -8,37 +8,54 @@ import UIKit
 
 public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
   private let worker = DispatchQueue(label: "dev.shewa.flutter_anti_virtuals")
+  private var channel: FlutterMethodChannel?
+  private var changes: FlutterEventChannel?
   private var monitor: NWPathMonitor?
-  private var lastPath: String?
+  // Bumped on every listen and cancel, so updates queued by an old monitor are ignored.
+  private var generation = 0
 
   public static func register(with registrar: FlutterPluginRegistrar) {
+    let instance = FlutterAntiVirtualsPlugin()
     let channel = FlutterMethodChannel(
       name: "flutter_anti_virtuals", binaryMessenger: registrar.messenger())
-    let instance = FlutterAntiVirtualsPlugin()
     registrar.addMethodCallDelegate(instance, channel: channel)
     let changes = FlutterEventChannel(
       name: "flutter_anti_virtuals/changes", binaryMessenger: registrar.messenger())
     changes.setStreamHandler(instance)
+    instance.channel = channel
+    instance.changes = changes
+    // Published so that detachFromEngine is called.
+    registrar.publish(instance)
   }
 
-  // Emits when the set of network interfaces or the connectivity status changes (a VPN
-  // adds a `utun` interface). The first update only describes the current state. A
-  // changed system proxy does not produce a path update; it is caught on the next scan.
+  public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
+    _ = onCancel(withArguments: nil)
+    changes?.setStreamHandler(nil)
+    channel?.setMethodCallHandler(nil)
+    changes = nil
+    channel = nil
+  }
+
+  // Emits on every path update after the first one (which only describes the current
+  // state). The key is not narrowed to the interface list: whether every kind of VPN shows
+  // up there is not guaranteed, and Dart debounces the events anyway. A changed system
+  // proxy does not produce a path update; it is caught on the next scan.
   public func onListen(
     withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink
   ) -> FlutterError? {
-    monitor?.cancel()
-    lastPath = nil
+    _ = onCancel(withArguments: nil)
+    let current = generation
     let monitor = NWPathMonitor()
-    monitor.pathUpdateHandler = { [weak self] path in
-      let key =
-        "\(path.status)|"
-        + path.availableInterfaces.map { "\($0.name):\($0.type)" }.sorted().joined(separator: ",")
+    var first = true
+    monitor.pathUpdateHandler = { [weak self] _ in
+      // Runs on the monitor's queue, so `first` is only touched here.
+      if first {
+        first = false
+        return
+      }
       DispatchQueue.main.async {
-        guard let self = self else { return }
-        let previous = self.lastPath
-        self.lastPath = key
-        if let previous = previous, previous != key { events("network") }
+        guard let self = self, self.generation == current else { return }
+        events("network")
       }
     }
     monitor.start(queue: DispatchQueue(label: "dev.shewa.flutter_anti_virtuals.path"))
@@ -47,10 +64,10 @@ public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHa
   }
 
   public func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    generation += 1
     monitor?.pathUpdateHandler = nil
     monitor?.cancel()
     monitor = nil
-    lastPath = nil
     return nil
   }
 

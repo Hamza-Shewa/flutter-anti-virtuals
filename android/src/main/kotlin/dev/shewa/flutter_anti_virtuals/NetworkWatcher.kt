@@ -3,20 +3,30 @@ package dev.shewa.flutter_anti_virtuals
 import android.content.Context
 import android.database.ContentObserver
 import android.net.ConnectivityManager
+import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.net.ProxyInfo
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+
+/** The one definition of "this network is a VPN", shared by the scan and the watcher. */
+internal fun NetworkCapabilities?.isVpn(): Boolean =
+    this?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true ||
+        this?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == false
+
+internal fun ProxyInfo?.describe(): String? =
+    this?.let { "${it.host}:${it.port}${it.pacFileUrl?.toString().orEmpty()}" }
 
 /** What matters about one network for VPN and proxy detection. */
 internal data class NetworkState(val id: String, val vpn: Boolean, val proxy: String?)
 
 internal object NetworkSignature {
     /** Same string for the same set of networks, whatever order they come in. */
-    fun of(networks: List<NetworkState>, defaultProxy: String?): String =
+    fun of(networks: Collection<NetworkState>, defaultProxy: String?): String =
         networks.map { "${it.id}|vpn=${it.vpn}|proxy=${it.proxy.orEmpty()}" }
             .sorted()
             .joinToString(";") + "#" + defaultProxy.orEmpty()
@@ -26,11 +36,18 @@ internal object NetworkSignature {
  * Calls [onChange] when a network appears, disappears, becomes or stops being a VPN, or
  * changes its proxy. The state that exists when [start] is called is the baseline and does
  * not produce a call, so only real changes reach the guard.
+ *
+ * The baseline is read once with a few binder calls. After that the state is kept up to date
+ * from the arguments the callbacks already carry, so the frequent capability updates (signal
+ * strength, bandwidth estimates) cost a map update and a string compare on the main thread,
+ * not more IPC.
  */
 internal class NetworkWatcher(context: Context, private val onChange: () -> Unit) {
     private val resolver = context.contentResolver
     private val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
     private val main = Handler(Looper.getMainLooper())
+    private val networks = HashMap<Network, NetworkState>()
+    private var defaultProxy: String? = null
     private var callback: ConnectivityManager.NetworkCallback? = null
     private var observer: ContentObserver? = null
     private var last = ""
@@ -39,12 +56,19 @@ internal class NetworkWatcher(context: Context, private val onChange: () -> Unit
     fun start() {
         val manager = cm ?: throw IllegalStateException("ConnectivityManager is not available")
         active = true
-        last = signature()
+        seed(manager)
+        last = NetworkSignature.of(networks.values, defaultProxy)
         val cb = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) = refresh()
-            override fun onLost(network: Network) = refresh()
-            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) = refresh()
-            override fun onLinkPropertiesChanged(network: Network, lp: android.net.LinkProperties) = refresh()
+            override fun onAvailable(network: Network) = update(network) { it }
+            override fun onLost(network: Network) = update(network, remove = true) { it }
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                val vpn = caps.isVpn()
+                update(network) { it.copy(vpn = vpn) }
+            }
+            override fun onLinkPropertiesChanged(network: Network, lp: LinkProperties) {
+                val proxy = lp.httpProxy.describe()
+                update(network) { it.copy(proxy = proxy) }
+            }
         }
         // The default request leaves VPNs out; without removing NOT_VPN a VPN never shows up.
         val request = NetworkRequest.Builder()
@@ -59,7 +83,10 @@ internal class NetworkWatcher(context: Context, private val onChange: () -> Unit
         // A proxy set globally (for example with adb) does not always reach LinkProperties.
         try {
             val obs = object : ContentObserver(main) {
-                override fun onChange(selfChange: Boolean) = refresh()
+                override fun onChange(selfChange: Boolean) {
+                    defaultProxy = readDefaultProxy()
+                    publish()
+                }
             }
             resolver.registerContentObserver(
                 Settings.Global.getUriFor(Settings.Global.HTTP_PROXY), false, obs,
@@ -83,42 +110,50 @@ internal class NetworkWatcher(context: Context, private val onChange: () -> Unit
             }
         }
         observer = null
+        networks.clear()
     }
 
-    // Callbacks arrive on binder threads on older Android versions; compare on the main thread.
-    private fun refresh() {
-        main.post {
-            if (!active) return@post
-            val now = signature()
-            if (now != last) {
-                last = now
-                onChange()
-            }
-        }
-    }
-
-    private fun signature(): String {
-        val manager = cm ?: return ""
-        val states = mutableListOf<NetworkState>()
+    private fun seed(manager: ConnectivityManager) {
         try {
             @Suppress("DEPRECATION")
             manager.allNetworks.forEach { network ->
-                val caps = manager.getNetworkCapabilities(network)
-                val proxy = manager.getLinkProperties(network)?.httpProxy
-                states += NetworkState(
+                networks[network] = NetworkState(
                     id = network.toString(),
-                    vpn = caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true ||
-                        caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == false,
-                    proxy = proxy?.let { "${it.host}:${it.port}${it.pacFileUrl?.toString().orEmpty()}" },
+                    vpn = manager.getNetworkCapabilities(network).isVpn(),
+                    proxy = manager.getLinkProperties(network)?.httpProxy.describe(),
                 )
             }
         } catch (_: Throwable) {
         }
-        val default = try {
-            manager.defaultProxy?.let { "${it.host}:${it.port}${it.pacFileUrl?.toString().orEmpty()}" }
-        } catch (_: Throwable) {
-            null
+        defaultProxy = readDefaultProxy()
+    }
+
+    private fun readDefaultProxy(): String? = try {
+        cm?.defaultProxy.describe()
+    } catch (_: Throwable) {
+        null
+    }
+
+    // Callbacks come on the main thread from Android 8 and on a binder thread before; the
+    // state is only touched on the main thread.
+    private fun update(network: Network, remove: Boolean = false, change: (NetworkState) -> NetworkState) {
+        main.post {
+            if (!active) return@post
+            if (remove) {
+                networks.remove(network)
+            } else {
+                val current = networks[network] ?: NetworkState(network.toString(), vpn = false, proxy = null)
+                networks[network] = change(current)
+            }
+            publish()
         }
-        return NetworkSignature.of(states, default)
+    }
+
+    private fun publish() {
+        val now = NetworkSignature.of(networks.values, defaultProxy)
+        if (now != last) {
+            last = now
+            onChange()
+        }
     }
 }
