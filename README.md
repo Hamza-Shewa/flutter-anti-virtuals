@@ -206,6 +206,9 @@ for anything that matters.
 
 ## Limits
 
+See [`doc/hardening.md`](doc/hardening.md) for obfuscation and for what the
+checks cannot stop.
+
 Every check runs on the device, so a rooted device or a hooked app can lie.
 Treat the report as a signal and verify important actions on your server,
 ideally with Play Integrity / App Attest. Package lists are best effort and

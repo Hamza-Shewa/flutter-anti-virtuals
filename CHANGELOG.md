@@ -6,6 +6,12 @@
 
 ## Unreleased
 
+* Android file checks (root, hooking and emulator files) now look through two
+  layers: `java.io.File` and a direct `Os.stat` system call. A path found by
+  either counts, and a path only the kernel finds is reported by `hooked` as
+  `file API hides <path>`, which catches root-hiding modules and Frida scripts
+  that patch the file API. New `doc/hardening.md` covers obfuscation and what the
+  checks cannot stop.
 * `verify(attestation: AttestationOptions(...))` also requests a Play Integrity
   token (Android, classic request, new `com.google.android.play:integrity`
   dependency) or an App Attest attestation / assertion (iOS) whose nonce or

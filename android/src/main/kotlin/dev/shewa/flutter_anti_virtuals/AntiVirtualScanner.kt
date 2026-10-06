@@ -302,9 +302,7 @@ internal class AntiVirtualScanner(private val context: Context) {
             hardware = Build.HARDWARE.orEmpty(),
             board = Build.BOARD.orEmpty(),
             properties = systemProperties(EmulatorRules.PROPERTIES),
-            existingFiles = EmulatorRules.FILES.keys.filter { path ->
-                try { File(path).exists() } catch (_: Throwable) { false }
-            }.toSet(),
+            existingFiles = EmulatorRules.FILES.keys.filter { exists(it) }.toSet(),
             installedPackages = installed(KnownPackages.emulator).toSet(),
             sensorNames = sensors,
             networkOperatorName = operator
@@ -332,7 +330,7 @@ internal class AntiVirtualScanner(private val context: Context) {
         return Detection.of(RootRules.details(evidence))
     }
 
-    private fun exists(path: String): Boolean = try { File(path).exists() } catch (_: Throwable) { false }
+    private fun exists(path: String): Boolean = FileProbe.exists(path)
 
     // ---- screen capture ---------------------------------------------------
 
@@ -361,9 +359,18 @@ internal class AntiVirtualScanner(private val context: Context) {
             stackClassNames = Throwable().stackTrace.map { it.className },
             installedPackages = installed(KnownPackages.hooking).toSet(),
             existingFiles = HookRules.FILES.filter { exists(it) }.toSet(),
-            fridaPortOpen = portOpen(HookRules.FRIDA_PORT)
+            fridaPortOpen = portOpen(HookRules.FRIDA_PORT),
+            hiddenPaths = FileProbe.hidden(probePaths())
         )
         return Detection.of(HookRules.details(evidence))
+    }
+
+    /** Every path this plugin looks for, to cross-check `java.io.File` against the kernel. */
+    private fun probePaths(): List<String> {
+        val directories = (System.getenv("PATH").orEmpty().split(':').filter { it.startsWith("/") } +
+            RootRules.BINARY_DIRECTORIES).distinct()
+        return (directories.flatMap { dir -> RootRules.BINARIES.map { "$dir/$it" } } +
+            RootRules.FILES + HookRules.FILES + EmulatorRules.FILES.keys).distinct()
     }
 
     /** Needs the INTERNET permission, which the host app normally has; without it this is false. */

@@ -17,7 +17,9 @@ internal data class HookEvidence(
     /** Files from [HookRules.FILES] that exist. */
     val existingFiles: Set<String> = emptySet(),
     /** True when something accepts connections on the Frida server port. */
-    val fridaPortOpen: Boolean = false
+    val fridaPortOpen: Boolean = false,
+    /** Paths the kernel finds but `java.io.File` reports missing (see [FileProbe]). */
+    val hiddenPaths: Set<String> = emptySet()
 )
 
 /**
@@ -70,6 +72,7 @@ internal object HookRules {
             .forEach { details += "hooked call stack through $it" }
         e.installedPackages.sorted().forEach { details += "hooking app $it" }
         e.existingFiles.sorted().forEach { details += "hooking file $it" }
+        e.hiddenPaths.sorted().forEach { details += "file API hides $it" }
         if (e.fridaPortOpen) details += "Frida server port $FRIDA_PORT is open"
 
         return details.distinct()
