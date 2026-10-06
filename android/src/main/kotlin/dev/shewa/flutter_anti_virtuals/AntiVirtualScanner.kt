@@ -15,6 +15,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Process
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import java.io.File
@@ -142,12 +143,19 @@ internal class AntiVirtualScanner(private val context: Context) {
             val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
             lm?.getProviders(true)?.forEach { provider ->
                 val loc: Location? = try { lm.getLastKnownLocation(provider) } catch (_: Throwable) { null }
-                if (loc != null && isMock(loc)) details += "mock location from provider $provider"
+                if (loc != null && isMock(loc) && Rules.isRecentFix(ageMs(loc))) {
+                    details += "mock location from provider $provider"
+                }
             }
         }
         details += installed(KnownPackages.mockLocation).map { "mock app $it" }
         return Detection.of(details.distinct())
     }
+
+    /** How long ago the fix was made, or null when the provider did not stamp it. */
+    private fun ageMs(location: Location): Long? =
+        location.elapsedRealtimeNanos.takeIf { it > 0 }
+            ?.let { (SystemClock.elapsedRealtimeNanos() - it) / 1_000_000 }
 
     private fun isMock(location: Location): Boolean =
         if (Build.VERSION.SDK_INT >= 31) location.isMock

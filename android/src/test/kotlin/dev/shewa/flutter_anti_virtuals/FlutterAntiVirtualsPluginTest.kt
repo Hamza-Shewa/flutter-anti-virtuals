@@ -60,6 +60,15 @@ internal class RulesTest {
     }
 
     @Test
+    fun onlyRecentMockFixesCount() {
+        assertTrue(Rules.isRecentFix(1_000))
+        assertTrue(Rules.isRecentFix(Rules.MOCK_FIX_MAX_AGE_MS))
+        assertFalse(Rules.isRecentFix(Rules.MOCK_FIX_MAX_AGE_MS + 1))
+        assertFalse(Rules.isRecentFix(60 * 60 * 1000))
+        assertTrue(Rules.isRecentFix(null))
+    }
+
+    @Test
     fun virtualInterfaces() {
         assertTrue(Rules.isVirtualInterface("tun0"))
         assertTrue(Rules.isVirtualInterface("wg0"))

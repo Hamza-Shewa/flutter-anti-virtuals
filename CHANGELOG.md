@@ -35,3 +35,10 @@
   callback arguments instead of querying on every update, iOS emits on every
   path update, ignores updates from a cancelled monitor and tears down on
   engine detach.
+* Fix: Android now reports a proxy set globally (for example with
+  `adb shell settings put global http_proxy`) through `environmentChanges`. The
+  settings observer it relied on does not fire when the value is set, so the
+  watcher also listens to the system's proxy-change broadcast.
+* Fix: Android `mockLocation` ignores mock fixes older than two minutes. The
+  last fix of a provider is cached, so a mock location that had been switched
+  off kept the device flagged (and the app blocked) for several minutes.

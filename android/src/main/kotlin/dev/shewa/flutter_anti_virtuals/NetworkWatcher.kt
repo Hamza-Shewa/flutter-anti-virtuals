@@ -1,6 +1,9 @@
 package dev.shewa.flutter_anti_virtuals
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.database.ContentObserver
 import android.net.ConnectivityManager
 import android.net.LinkProperties
@@ -17,6 +20,9 @@ import android.provider.Settings
 internal fun NetworkCapabilities?.isVpn(): Boolean =
     this?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true ||
         this?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == false
+
+/** Broadcast the system sends after it applied a changed proxy (not exposed in the SDK). */
+private const val PROXY_CHANGE_ACTION = "android.intent.action.PROXY_CHANGE"
 
 internal fun ProxyInfo?.describe(): String? =
     this?.let { "${it.host}:${it.port}${it.pacFileUrl?.toString().orEmpty()}" }
@@ -43,6 +49,7 @@ internal object NetworkSignature {
  * not more IPC.
  */
 internal class NetworkWatcher(context: Context, private val onChange: () -> Unit) {
+    private val appContext = context.applicationContext ?: context
     private val resolver = context.contentResolver
     private val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
     private val main = Handler(Looper.getMainLooper())
@@ -50,6 +57,7 @@ internal class NetworkWatcher(context: Context, private val onChange: () -> Unit
     private var defaultProxy: String? = null
     private var callback: ConnectivityManager.NetworkCallback? = null
     private var observer: ContentObserver? = null
+    private var proxyReceiver: BroadcastReceiver? = null
     private var last = ""
     private var active = false
 
@@ -81,12 +89,26 @@ internal class NetworkWatcher(context: Context, private val onChange: () -> Unit
         }
         callback = cb
         // A proxy set globally (for example with adb) does not always reach LinkProperties.
+        // The settings observer is not enough on its own: it does not fire when the value is
+        // set (only when it is deleted) on current Android. The system sends PROXY_CHANGE once
+        // the connectivity service has applied the new proxy, so `defaultProxy` is current
+        // when it arrives.
+        try {
+            val rec = object : BroadcastReceiver() {
+                override fun onReceive(c: Context, intent: Intent) = refreshProxy()
+            }
+            val filter = IntentFilter(PROXY_CHANGE_ACTION)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                appContext.registerReceiver(rec, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                appContext.registerReceiver(rec, filter)
+            }
+            proxyReceiver = rec
+        } catch (_: Throwable) {
+        }
         try {
             val obs = object : ContentObserver(main) {
-                override fun onChange(selfChange: Boolean) {
-                    defaultProxy = readDefaultProxy()
-                    publish()
-                }
+                override fun onChange(selfChange: Boolean) = refreshProxy()
             }
             resolver.registerContentObserver(
                 Settings.Global.getUriFor(Settings.Global.HTTP_PROXY), false, obs,
@@ -110,6 +132,13 @@ internal class NetworkWatcher(context: Context, private val onChange: () -> Unit
             }
         }
         observer = null
+        proxyReceiver?.let {
+            try {
+                appContext.unregisterReceiver(it)
+            } catch (_: Throwable) {
+            }
+        }
+        proxyReceiver = null
         networks.clear()
     }
 
@@ -126,6 +155,12 @@ internal class NetworkWatcher(context: Context, private val onChange: () -> Unit
         } catch (_: Throwable) {
         }
         defaultProxy = readDefaultProxy()
+    }
+
+    private fun refreshProxy() {
+        if (!active) return
+        defaultProxy = readDefaultProxy()
+        publish()
     }
 
     private fun readDefaultProxy(): String? = try {

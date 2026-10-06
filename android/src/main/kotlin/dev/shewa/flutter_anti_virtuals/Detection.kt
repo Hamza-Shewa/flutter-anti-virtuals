@@ -56,6 +56,16 @@ internal object Rules {
         return !adopted.matches(dir)
     }
 
+    /**
+     * Android keeps the last fix of every provider, so a mock fix stays visible long after the
+     * spoofing app stopped (or its test provider was removed). A running mock app injects a new
+     * fix about every second, so only a recent one counts. A fix of unknown age counts.
+     */
+    const val MOCK_FIX_MAX_AGE_MS = 120_000L
+
+    fun isRecentFix(ageMs: Long?, maxAgeMs: Long = MOCK_FIX_MAX_AGE_MS): Boolean =
+        ageMs == null || ageMs <= maxAgeMs
+
     fun isVirtualInterface(name: String): Boolean {
         val n = name.lowercase()
         // `ipsec*` is deliberately absent: Wi-Fi Calling / VoLTE keep those up.
