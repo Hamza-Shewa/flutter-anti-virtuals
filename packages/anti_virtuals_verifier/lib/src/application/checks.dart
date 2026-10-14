@@ -3,12 +3,14 @@ import 'dart:typed_data';
 
 import '../domain/device_report.dart';
 import '../domain/key_attestation.dart';
+import '../domain/play_integrity.dart';
 import '../domain/policy.dart';
 import '../domain/ports.dart';
 import '../domain/verification_result.dart';
 import '../infrastructure/key_description.dart';
 import '../infrastructure/public_key.dart';
 import '../infrastructure/x509.dart';
+import 'app_attest_verifier.dart';
 import 'report_check.dart';
 
 /// The nonce was issued by this server and is used now, once.
@@ -98,7 +100,7 @@ final class PlatformCheck implements ReportCheck {
   Rejected? check(VerificationContext context) {
     final accepted = switch (context.report.platform) {
       DevicePlatform.android => _policy.android != null,
-      DevicePlatform.iOS => _policy.acceptIos,
+      DevicePlatform.iOS => _policy.ios != null || _policy.acceptIos,
     };
     return accepted
         ? null
@@ -267,7 +269,8 @@ final class AndroidKeyAttestationCheck implements ReportCheck {
 }
 
 /// Android: a decoded Play Integrity verdict vouches for the app and device
-/// and is bound to this payload.
+/// and is bound to this payload. A rejection names the Google Play dialog
+/// that can fix it, when there is one.
 final class PlayIntegrityCheck implements ReportCheck {
   PlayIntegrityCheck(this._android, this._policy)
     : _digests = {
@@ -282,65 +285,128 @@ final class PlayIntegrityCheck implements ReportCheck {
   @override
   Rejected? check(VerificationContext context) {
     if (context.report.platform != DevicePlatform.android) return null;
-    Rejected reject(String message) =>
-        context.reject(RejectionReason.playIntegrity, message);
+    Rejected reject(String message, [PlayIntegrityRemediation? remediation]) =>
+        context.reject(
+          RejectionReason.playIntegrity,
+          message,
+          remediation: remediation,
+        );
 
-    final verdict = context.playIntegrityVerdict;
-    if (verdict == null) {
+    final json = context.playIntegrityJson;
+    if (json == null) {
       return reject('No decoded Play Integrity verdict was passed');
     }
-    final request = _map(verdict['requestDetails']);
-    final app = _map(verdict['appIntegrity']);
-    final device = _map(verdict['deviceIntegrity']);
-    final account = _map(verdict['accountDetails']);
+    final verdict = PlayIntegrityVerdict.fromJson(json);
+    context.playIntegrity = verdict;
 
-    final binding = request['requestHash'] ?? request['nonce'];
+    final request = verdict.requestDetails;
+    final binding = request.requestHash ?? request.nonce;
     final expected = sha256(utf8.encode(context.envelope.payload));
-    if (binding is! String || !_sameBytes(_base64Url(binding), expected)) {
+    if (binding == null || !_sameBytes(_base64Url(binding), expected)) {
       return reject('The token is not bound to this payload');
     }
-    if (!_android.packageNames.contains(request['requestPackageName'])) {
-      return reject(
-        'The token was requested by ${request['requestPackageName']}',
-      );
+    if (!_android.packageNames.contains(request.requestPackageName)) {
+      return reject('The token was requested by ${request.requestPackageName}');
     }
-    final timestamp = int.tryParse('${request['timestampMillis']}');
+    final timestamp = request.timestamp;
     if (timestamp == null ||
-        context.now.difference(
-              DateTime.fromMillisecondsSinceEpoch(timestamp, isUtc: true),
-            ) >
-            _policy.maxAge) {
+        context.now.difference(timestamp) > _policy.maxAge) {
       return reject('The token is too old');
     }
+
+    final app = verdict.appIntegrity;
     if (_policy.requirePlayRecognized) {
-      if (app['appRecognitionVerdict'] != 'PLAY_RECOGNIZED') {
-        return reject('App recognition: ${app['appRecognitionVerdict']}');
+      final recognition = app.appRecognitionVerdict;
+      if (recognition != AppRecognitionVerdict.playRecognized) {
+        return reject(
+          'App recognition: ${recognition?.value ?? 'missing'}',
+          recognition == AppRecognitionVerdict.unrecognizedVersion
+              ? PlayIntegrityRemediation.getLicensed
+              : PlayIntegrityRemediation.getIntegrity,
+        );
       }
-      final digests = [
-        for (final digest
-            in app['certificateSha256Digest'] as List? ?? const [])
-          if (digest is String) _hex(_base64Url(digest)),
-      ];
-      if (!digests.any(_digests.contains)) {
+      if (!app.certificateSha256Hex.any(_digests.contains)) {
         return reject(
           'Play does not know the app as signed with your certificate',
         );
       }
     }
+
+    final device = verdict.deviceIntegrity;
     final required = _policy.requiredDeviceVerdict;
-    final labels = device['deviceRecognitionVerdict'] as List? ?? const [];
-    if (required != null && !labels.contains(required)) {
-      return reject('Device recognition: ${labels.join(', ')}');
+    if (required != null &&
+        !device.deviceRecognitionVerdict.contains(required)) {
+      return reject(
+        'Device recognition: '
+        '${device.deviceRecognitionVerdict.map((l) => l.value).join(', ')}',
+        required == DeviceRecognitionLabel.meetsStrongIntegrity
+            ? PlayIntegrityRemediation.getStrongIntegrity
+            : PlayIntegrityRemediation.getIntegrity,
+      );
     }
-    if (_policy.requireLicensed &&
-        account['appLicensingVerdict'] != 'LICENSED') {
-      return reject('Licensing: ${account['appLicensingVerdict']}');
+
+    final licensing = verdict.accountDetails.appLicensingVerdict;
+    if (_policy.requireLicensed && licensing != AppLicensingVerdict.licensed) {
+      return reject(
+        'Licensing: ${licensing?.value ?? 'missing'}',
+        licensing == AppLicensingVerdict.unlicensed
+            ? PlayIntegrityRemediation.getLicensed
+            : PlayIntegrityRemediation.getIntegrity,
+      );
+    }
+
+    final environment = verdict.environmentDetails;
+    final apps = environment.appsDetected;
+    if (apps == null) {
+      if (_policy.requireAppAccessRiskVerdict) {
+        return reject('App access risk was not evaluated');
+      }
+    } else {
+      final found = apps.intersection(_policy.rejectedAppAccessRisks);
+      if (found.isNotEmpty) {
+        return reject(
+          'App access risk: ${found.map((r) => r.value).join(', ')}',
+          _accessRiskRemediation(found),
+        );
+      }
+    }
+
+    final playProtect = environment.playProtectVerdict;
+    final accepted = _policy.acceptedPlayProtectVerdicts;
+    if (accepted != null && !accepted.contains(playProtect)) {
+      return reject(
+        'Play Protect: ${playProtect?.value ?? 'missing'}',
+        PlayIntegrityRemediation.getStrongIntegrity,
+      );
+    }
+
+    final cap = _policy.maxDeviceActivityLevel;
+    final activity = device.deviceActivityLevel;
+    if (cap != null && (activity == null || !activity.isAtMost(cap))) {
+      return reject('Recent device activity: ${activity?.value ?? 'missing'}');
     }
     return null;
   }
 
-  static Map<String, Object?> _map(Object? value) =>
-      value is Map<String, Object?> ? value : const {};
+  /// `CLOSE_ALL_ACCESS_RISK` when a known app is involved, since closing
+  /// unknown apps would not help; `CLOSE_UNKNOWN_ACCESS_RISK` otherwise. No
+  /// dialog closes apps that are only installed or draw overlays.
+  static PlayIntegrityRemediation? _accessRiskRemediation(
+    Set<AppAccessRisk> found,
+  ) {
+    if (found.any(
+      const {
+        AppAccessRisk.knownCapturing,
+        AppAccessRisk.knownControlling,
+      }.contains,
+    )) {
+      return PlayIntegrityRemediation.closeAllAccessRisk;
+    }
+    if (found.any(AppAccessRisk.unknownCapturingOrControlling.contains)) {
+      return PlayIntegrityRemediation.closeUnknownAccessRisk;
+    }
+    return null;
+  }
 
   static Uint8List _base64Url(String value) {
     try {
@@ -348,6 +414,62 @@ final class PlayIntegrityCheck implements ReportCheck {
     } on FormatException {
       return Uint8List(0);
     }
+  }
+}
+
+/// iOS: an App Attest attestation or assertion from your app, made for this
+/// payload. The client data hash is the SHA-256 of the signed payload, as
+/// the plugin computes it.
+final class AppAttestCheck implements ReportCheck {
+  const AppAttestCheck(this._policy, this._verifier);
+
+  final IosPolicy _policy;
+  final AppAttestVerifier _verifier;
+
+  @override
+  Future<Rejected?> check(VerificationContext context) async {
+    if (context.report.platform != DevicePlatform.iOS) return null;
+    final attestation = context.envelope.attestation;
+    if (attestation == null || attestation['type'] != 'appAttest') {
+      return _policy.requireAppAttest
+          ? context.reject(RejectionReason.notAttested, 'No App Attest object')
+          : null;
+    }
+    final token = attestation['token'];
+    final keyId = attestation['keyId'];
+    if (token is! String || keyId is! String) {
+      return context.reject(
+        RejectionReason.notAttested,
+        'The App Attest object has no token or key id',
+      );
+    }
+    final Uint8List object;
+    try {
+      object = base64.decode(token);
+    } on FormatException {
+      return context.reject(
+        RejectionReason.notAttested,
+        'The App Attest token is not base64',
+      );
+    }
+    final clientDataHash = sha256(utf8.encode(context.envelope.payload));
+    try {
+      context.appAttest = attestation['assertion'] == true
+          ? await _verifier.verifyAssertion(
+              assertion: object,
+              keyId: keyId,
+              clientDataHash: clientDataHash,
+            )
+          : await _verifier.verifyAttestation(
+              attestation: object,
+              keyId: keyId,
+              clientDataHash: clientDataHash,
+              now: context.now,
+            );
+    } on AppAttestException catch (e) {
+      return context.reject(e.reason, e.message);
+    }
+    return null;
   }
 }
 
@@ -381,9 +503,6 @@ final class SignalPolicyCheck implements ReportCheck {
 /// Lowercase hex without separators.
 String normalizeHex(String hex) =>
     hex.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toLowerCase();
-
-String _hex(List<int> bytes) =>
-    bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
 bool _sameBytes(List<int> a, List<int> b) {
   if (a.length != b.length) return false;

@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import '../domain/app_attest.dart';
 import '../domain/device_report.dart';
 import '../domain/key_attestation.dart';
+import '../domain/play_integrity.dart';
 import '../domain/signed_report_envelope.dart';
 import '../domain/verification_result.dart';
 
@@ -11,7 +13,7 @@ final class VerificationContext {
     required this.envelope,
     required this.report,
     required this.now,
-    this.playIntegrityVerdict,
+    this.playIntegrityJson,
   });
 
   final SignedReportEnvelope envelope;
@@ -19,13 +21,28 @@ final class VerificationContext {
   final DateTime now;
 
   /// The decoded Play Integrity token, when the caller passed one.
-  final Map<String, Object?>? playIntegrityVerdict;
+  final Map<String, Object?>? playIntegrityJson;
 
   /// Set by the Android key attestation check once it passed.
   KeyAttestation? keyAttestation;
 
-  Rejected reject(RejectionReason reason, String message) =>
-      Rejected(reason, message, report: report);
+  /// Set by the Play Integrity check once it read the verdict.
+  PlayIntegrityVerdict? playIntegrity;
+
+  /// Set by the App Attest check once it passed.
+  AppAttestResult? appAttest;
+
+  Rejected reject(
+    RejectionReason reason,
+    String message, {
+    PlayIntegrityRemediation? remediation,
+  }) => Rejected(
+    reason,
+    message,
+    report: report,
+    playIntegrityVerdict: playIntegrity,
+    remediation: remediation,
+  );
 }
 
 /// One step of the verification. Steps run in order and the first rejection

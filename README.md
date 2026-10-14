@@ -479,25 +479,28 @@ the server has to make. The
 [`anti_virtuals_verifier`](packages/anti_virtuals_verifier/) package in this
 repository makes them for a Dart backend: nonce, age, signature, the Android
 key attestation chain up to Google's roots with the revocation list, the
-attested app and boot state, a decoded Play Integrity verdict, and your signal
-policy.
+attested app and boot state, a decoded Play Integrity verdict with its
+environment details and the remediation dialog that fits, App Attest
+attestations and assertions, and your signal policy. It also has clients for
+Play Integrity token decoding and device recall, Apple's DeviceCheck two bits
+and the App Attest risk metric.
 
 ```dart
 final verifier = SignedReportVerifier(
   nonces: nonceStore,
+  appAttestKeys: appAttestKeyStore, // your table of enrolled App Attest keys
   policy: const VerificationPolicy(
     android: AndroidPolicy(
       packageNames: {'com.example.app'},
       signingCertificateDigests: {'AB:CD:…'},
     ),
+    ios: IosPolicy(teamId: 'ABCDE12345', bundleIds: {'com.example.app'}),
   ),
 );
 
 final result = await verifier.verify(body['report']);
-if (result is Rejected) return forbidden();
+if (result is Rejected) return forbidden(dialog: result.remediation?.name);
 ```
-
-It does not verify App Attest objects.
 
 ## Signals
 

@@ -26,12 +26,14 @@ await api.transfer(amount, attestation: signed.toJson());
 | `protection` | `strongBox`, `hardware` or `software`. Treat `software` as no device binding. |
 | `attested` | Android only: the chain below carries a hardware key attestation. |
 | `certificateChain` | Android only: base64 DER certificates, attested leaf first. |
+| `attestation` | Only with `verify(attestation: ...)`: `type` (`playIntegrity` or `appAttest`), `token` (the Play Integrity token, or the base64 App Attest object), `standard` (Play Integrity: a standard request), `keyId` and `assertion` (App Attest: the base64 key id, and false for an attestation, true for an assertion), `deviceCheckToken` (iOS with `deviceCheck: true`: a base64 DeviceCheck token). |
 
 ## What the server must check
 
 Do these in order and reject on the first failure. A Dart backend can use the
 [`anti_virtuals_verifier`](../packages/anti_virtuals_verifier/) package, which
-makes all of them except App Attest.
+makes all of them, App Attest included, and has clients for the Google and
+Apple server APIs below.
 
 1. **Nonce.** `payload.nonce` is one you issued, has not been used before and
    has not expired. Delete it as you check it. This is what stops replay.
@@ -81,7 +83,17 @@ Play Integrity API with your Google Cloud project) and checks:
 * `deviceIntegrity.deviceRecognitionVerdict` contains
   `MEETS_DEVICE_INTEGRITY` (or `MEETS_STRONG_INTEGRITY` for the most
   sensitive actions);
-* optionally `accountDetails.appLicensingVerdict` is `LICENSED`.
+* optionally `accountDetails.appLicensingVerdict` is `LICENSED`;
+* optionally the environment details and device activity, once you turn
+  these responses on in the Play Console (Protected with Play, Play Integrity
+  API, Change responses): `environmentDetails.appAccessRiskVerdict.appsDetected`
+  has no `UNKNOWN_CAPTURING` or `UNKNOWN_CONTROLLING` (apps not from Play
+  that could read the screen or control the device; the `KNOWN_` values are
+  the same for Play and system apps), `environmentDetails.playProtectVerdict`
+  is `NO_ISSUES`, and `deviceIntegrity.recentDeviceActivity.deviceActivityLevel`
+  is not above what your app normally reaches (`LEVEL_1` to `LEVEL_4`, by
+  the number of tokens your app requested on the device in the last hour).
+  An empty `appAccessRiskVerdict` means Play did not evaluate it.
 
 Both request types are decoded with the same `decodeIntegrityToken` call.
 
@@ -112,36 +124,139 @@ final signed = await FlutterAntiVirtuals.instance.verify(
 when Play reports the provider expired. A standard request always needs
 `cloudProjectNumber`. Either way the app needs the `INTERNET` permission.
 
+#### Remediation dialogs
+
+When a verdict fails for a reason the user can fix, Google Play can show a
+dialog for it. The server picks the dialog and tells the app, which shows it
+with `showPlayIntegrityDialog` in the same app session as the request it
+verified:
+
+| Verdict | Dialog (`PlayIntegrityDialog`) |
+| --- | --- |
+| `appLicensingVerdict` is `UNLICENSED`, or `appRecognitionVerdict` is `UNRECOGNIZED_VERSION` | `getLicensed` (`GET_LICENSED`) |
+| `appsDetected` has `UNKNOWN_CAPTURING` or `UNKNOWN_CONTROLLING` | `closeUnknownAccessRisk` (`CLOSE_UNKNOWN_ACCESS_RISK`) |
+| `appsDetected` has `KNOWN_CAPTURING` or `KNOWN_CONTROLLING` | `closeAllAccessRisk` (`CLOSE_ALL_ACCESS_RISK`) |
+| no `MEETS_DEVICE_INTEGRITY`, or licensing or app recognition `UNEVALUATED` | `getIntegrity` (`GET_INTEGRITY`) |
+| no `MEETS_STRONG_INTEGRITY`, or a `playProtectVerdict` other than `NO_ISSUES` | `getStrongIntegrity` (`GET_STRONG_INTEGRITY`) |
+
+```dart
+// The server answered {"dialog": "getIntegrity"}.
+final result = await FlutterAntiVirtuals.instance.showPlayIntegrityDialog(
+  PlayIntegrityDialog.values.byName(response['dialog']),
+);
+// successful only means the user went through it: get a new nonce and
+// verify again.
+```
+
+`anti_virtuals_verifier` puts the dialog in `Rejected.remediation`.
+
+#### Device recall
+
+Device recall (beta, opt in from the same Play Console page) stores three
+bits per device with Google. They survive a reinstall and a factory reset,
+and every app in your developer account shares them. The verdict carries
+them as `deviceIntegrity.deviceRecall.values` (`bitFirst`, `bitSecond`,
+`bitThird`) and `writeDates` (`yyyymmFirst` and so on, set while a bit is
+true). To change them, your server calls Google with a token it already
+verified, within 14 days:
+
+```
+POST https://playintegrity.googleapis.com/v1/<packageName>/deviceRecall:write
+Authorization: Bearer <OAuth token with the playintegrity scope>
+
+{"integrityToken": "<token>", "newValues": {"bitFirst": true}}
+```
+
+Bits you leave out keep their value. Setting a bit to false clears its write
+date. The new value can take up to 30 seconds to show in verdicts; a
+standard request sees it after the provider is prepared again.
+
 ### iOS: App Attest
 
 Enable the App Attest capability (entitlement
 `com.apple.developer.devicecheck.appattest-environment`, `development` or
 `production`). The Simulator does not support it and `verify` then throws.
 
-* The first request of a key returns an **attestation** (`assertion: false`).
-  Verify it as Apple documents: the CBOR object's `x5c` chain leads to the
-  Apple App Attestation root, the nonce extension (OID
-  `1.2.840.113635.100.8.2`) equals `SHA256(authData || SHA256(payload))`,
-  `authData.rpIdHash` is `SHA256("<TeamID>.<BundleID>")`, the counter is 0,
-  the AAGUID is `appattest` (production) and the credential id equals `keyId`.
-  **Store `keyId` and the public key from the certificate**; this enrolls the
-  device.
-* Every later request returns an **assertion** (`assertion: true`). Verify the
-  signature over `authData || SHA256(payload)` with the stored public key, the
-  `rpIdHash`, and that the counter is greater than the stored one, then store
-  the new counter.
+The client data hash the app passes to App Attest is the SHA-256 of the UTF-8
+bytes of `payload`. Check every object against that hash, computed from the
+`payload` you received.
+
+* The first request of a key returns an attestation (`assertion: false`), a
+  CBOR object with `fmt` `apple-appattest`. Verify it as Apple documents:
+  the `x5c` chain leads to the Apple App Attestation Root CA, the nonce
+  extension (OID `1.2.840.113635.100.8.2`) of the first certificate equals
+  `SHA256(authData || clientDataHash)`, `keyId` is the SHA-256 of that
+  certificate's public key, `authData.rpIdHash` is
+  `SHA256("<TeamID>.<BundleID>")`, the counter is 0, the AAGUID is
+  `appattest` followed by seven zero bytes (production) or
+  `appattestdevelop` (development), and the credential id equals `keyId`.
+  Then store `keyId`, the public key, the counter (0) and the receipt from
+  `attStmt.receipt`. A `keyId` you already store must not be enrolled again.
+* Every later request returns an assertion (`assertion: true`), a CBOR map
+  with `signature` and `authenticatorData`. Verify the signature (ECDSA with
+  SHA-256) over `nonce = SHA256(authenticatorData || clientDataHash)` with
+  the stored public key, the `rpIdHash`, and that the counter is greater
+  than the stored one. Store the new counter in the same atomic step that checks
+  the old one, so that one assertion cannot pass twice.
 * If your backend does not know `keyId` (the first request never arrived, the
   database was reset), call `verify` again with
   `AttestationOptions(resetAppAttestKey: true)` to enroll a new key. Do not do
   this on every request: Apple rate limits key attestation.
+* Recent iOS versions add `apple_validation_category_01` (how the app was
+  distributed: 2 TestFlight, 3 development signed, 4 App Store, 5 Enterprise
+  or ad hoc) and `apple_bundle_version_01` to the authenticator data. Check
+  them if you want to refuse, for example, development builds.
+
+`anti_virtuals_verifier` does all of this with
+`VerificationPolicy(ios: IosPolicy(teamId: ..., bundleIds: {...}))` and an
+`AppAttestKeyStore` for the keys.
+
+#### Risk metric
+
+A compromised device can serve assertions to many copies of an app. Apple
+counts how many keys were attested for your app on a device in the last 30
+days. To read it, POST the base64 receipt to
+`https://data.appattest.apple.com/v1/attestationData`
+(`data-development.appattest.apple.com` for development keys) with an
+`Authorization` header holding the JWT described under DeviceCheck. Apple
+answers with a new base64 receipt (PKCS #7). Check its signature up to Apple
+Root CA - G3, that field 2 is your App ID, that the creation time (field 12)
+is at most five minutes old and that field 3 holds the key you stored; the
+risk metric is field 17. Store the new receipt and send it next time, after
+its "not before" time (field 19, Apple answers 304 before) and before it
+expires (field 21). `anti_virtuals_verifier` has `AppAttestReceiptClient`
+for this.
+
+### iOS: DeviceCheck
+
+`AttestationOptions(deviceCheck: true)` also adds a DeviceCheck token
+(`attestation.deviceCheckToken`). With it your server can read and set two
+bits that Apple keeps per device for your team. They survive a reinstall,
+which suits "already claimed the trial" or "banned".
+
+Send JSON with `device_token`, a unique `transaction_id` and `timestamp` (ms)
+to `https://api.devicecheck.apple.com/v1/query_two_bits`, `update_two_bits`
+(with `bit0` and `bit1`) or `validate_device_token`
+(`api.development.devicecheck.apple.com` for builds run from Xcode). The
+`Authorization: Bearer` header holds a JWT signed with ES256 by a `.p8` key
+you create with the DeviceCheck service enabled: header `alg` `ES256` and
+`kid` the key id, claims `iss` your Team ID and `iat` the time in seconds,
+at most an hour old. A query answers `{"bit0": ..., "bit1": ...,
+"last_update_time": "YYYY-MM"}`, or the text `Bit State Not Found` for a
+device whose bits were never set.
+
+Apple checks that the token comes from a genuine Apple device and an app of
+your team, but the token is not bound to the signed payload, so it does not
+prove which device sent the report. Treat the bits as memory about a device,
+next to App Attest. `anti_virtuals_verifier` has `DeviceCheckClient` and
+`AppleJwtSigner` for this.
 
 ## iOS without App Attest
 
-iOS has no key attestation, so on iOS the signature only proves that the
-payload was not altered in transit and was produced with a fresh key. It does
-not prove the device is genuine. Use Apple App Attest for that (see the
-attestation guide) and treat an iOS `verify()` report as advisory until it is
-bound to an App Attest assertion.
+iOS has no key attestation, so without App Attest the signature only proves
+that the payload was not altered in transit and was produced with a fresh
+key. It does not prove the device or the app is genuine. Treat such a report
+as advisory.
 
 ## What this does not protect against
 
