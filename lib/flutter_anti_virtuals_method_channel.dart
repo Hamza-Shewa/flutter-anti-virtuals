@@ -24,7 +24,14 @@ class MethodChannelFlutterAntiVirtuals extends FlutterAntiVirtualsPlatform {
       'scan',
       options.toMap(),
     );
-    return AntiVirtualReport.fromMap(raw ?? const <Object?, Object?>{});
+    if (raw == null) {
+      // An empty report would read as a clean device.
+      throw PlatformException(
+        code: 'no_result',
+        message: 'The native scan returned no result',
+      );
+    }
+    return AntiVirtualReport.fromMap(raw, requested: options.enabledSignals);
   }
 
   @override

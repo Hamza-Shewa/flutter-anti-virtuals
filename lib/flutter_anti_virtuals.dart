@@ -6,6 +6,7 @@ import 'src/attestation.dart';
 import 'src/report.dart';
 import 'src/scan_options.dart';
 import 'src/screen_protection.dart';
+import 'src/screen_protection_coordinator.dart';
 import 'src/signed_report.dart';
 import 'src/signal.dart';
 
@@ -25,7 +26,8 @@ class FlutterAntiVirtuals {
   static final FlutterAntiVirtuals instance = FlutterAntiVirtuals._();
 
   /// Runs the requested checks and returns what was found. A check that fails
-  /// natively is reported as unsupported (not as clean). Channel errors such as
+  /// natively, or that the native side leaves out, is reported as
+  /// [SignalResult.failed] (unknown, not clean). Channel errors such as
   /// `PlatformException` or `MissingPluginException` propagate; treat them as a
   /// failed scan rather than a clean device.
   Future<AntiVirtualReport> scan([ScanOptions? options]) =>
@@ -43,7 +45,8 @@ class FlutterAntiVirtuals {
   /// It is requested after signing, so a failure there throws and no
   /// half-attested report is returned.
   ///
-  /// Throws an [ArgumentError] for a short [nonce]; native failures propagate
+  /// Throws an [ArgumentError] for a short [nonce] and an [UnsupportedError]
+  /// on platforms other than Android and iOS; native failures propagate
   /// as `PlatformException` and must be treated as an unverified device.
   Future<SignedReport> verify({
     required String nonce,
@@ -57,11 +60,15 @@ class FlutterAntiVirtuals {
         'must be at least 16 characters, issued by your backend',
       );
     }
+    final platform = switch (defaultTargetPlatform) {
+      TargetPlatform.android => 'android',
+      TargetPlatform.iOS => 'iOS',
+      final other => throw UnsupportedError(
+        'verify() is only available on Android and iOS, not ${other.name}',
+      ),
+    };
     final report = await scan(options);
     final issuedAt = DateTime.now().toUtc();
-    final platform = defaultTargetPlatform == TargetPlatform.iOS
-        ? 'iOS'
-        : 'android';
     final payload = SignedReport.encodePayload(
       nonce: nonce,
       issuedAt: issuedAt,
@@ -109,13 +116,17 @@ class FlutterAntiVirtuals {
   /// when one is) or when the platform has no such protection.
   ///
   /// [AntiVirtualGuard.protectScreen] does this for you while it is mounted.
+  /// Requests from guards and from this method are combined: the window stays
+  /// protected while any of them still asks for it.
   Future<bool> protectScreen([
     ScreenProtectionOptions options = const ScreenProtectionOptions(),
-  ]) => FlutterAntiVirtualsPlatform.instance.setScreenProtection(options);
+  ]) => ScreenProtectionCoordinator.instance.request(this, options);
 
-  /// Removes what [protectScreen] applied.
+  /// Withdraws what [protectScreen] asked for. Protections a mounted guard
+  /// still needs stay on, and flags your app set on the window itself are
+  /// never cleared.
   Future<bool> unprotectScreen() =>
-      FlutterAntiVirtualsPlatform.instance.setScreenProtection(null);
+      ScreenProtectionCoordinator.instance.request(this, null);
 
   /// Convenience for a single check.
   Future<SignalResult> check(

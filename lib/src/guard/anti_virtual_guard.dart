@@ -1,8 +1,9 @@
 import 'dart:async';
-import 'dart:io' show Platform, exit;
+import 'dart:io' show exit;
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show setEquals;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, setEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -10,6 +11,7 @@ import '../../flutter_anti_virtuals_platform_interface.dart';
 import '../report.dart';
 import '../scan_options.dart';
 import '../screen_protection.dart';
+import '../screen_protection_coordinator.dart';
 import '../signal.dart';
 import 'messages.dart';
 
@@ -66,6 +68,7 @@ class AntiVirtualGuard extends StatefulWidget {
     this.liveDebounce = const Duration(milliseconds: 500),
     this.protectScreen,
     this.failClosed = false,
+    this.blockOnInstalledApps = false,
     this.unmountWhileBlocked = true,
     this.onReport,
     this.onError,
@@ -178,12 +181,19 @@ class AntiVirtualGuard extends StatefulWidget {
   /// changes (a VPN coming up touches several networks) causes one scan.
   final Duration liveDebounce;
 
-  /// Block the app when a scan fails (first scan, or a rescan) instead of
+  /// Block the app when a scan fails (first scan, or a rescan), or when the
+  /// check of a signal in [blockOn] fails ([SignalResult.failed]), instead of
   /// failing open. The default screen then shows
   /// [AntiVirtualMessages.scanFailed] and [blockedBuilder] receives an empty
-  /// list. Without it a failing first scan lets the app through, and a failed
-  /// rescan keeps the previous result.
+  /// list. Without it a failing first scan lets the app through, a failed
+  /// rescan keeps the previous result and a failed check does not block.
   final bool failClosed;
+
+  /// Also block when the only evidence for a signal is that a known tool is
+  /// installed ([SignalResult.onlyInstalledApps]), for example a fake-GPS app
+  /// that is not running. Off by default, because many people have such apps
+  /// installed without using them; the detection still reaches [onReport].
+  final bool blockOnInstalledApps;
 
   /// Remove the app from the tree while blocked (the default) instead of only
   /// hiding it, so it cannot react to the back button or deep links. Its state
@@ -220,6 +230,8 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
   bool _foreground = true;
   DateTime? _lastScanAt;
   List<AntiVirtualSignal> _matches = const <AntiVirtualSignal>[];
+  // A check of a blocking signal failed in the last report.
+  bool _blockingCheckFailed = false;
   Timer? _exitTimer;
   Timer? _tickTimer;
   Timer? _intervalTimer;
@@ -234,7 +246,9 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
 
   late ScanOptions _options = widget.options ?? ScanOptions();
 
-  bool get _blocked => _matches.isNotEmpty || (_failed && widget.failClosed);
+  bool get _blocked =>
+      _matches.isNotEmpty ||
+      (widget.failClosed && (_failed || _blockingCheckFailed));
 
   @override
   void initState() {
@@ -267,7 +281,8 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     if (changedOptions) {
       _scan();
     } else if (!setEquals(old.blockOn, widget.blockOn) ||
-        old.failClosed != widget.failClosed) {
+        old.failClosed != widget.failClosed ||
+        old.blockOnInstalledApps != widget.blockOnInstalledApps) {
       _apply();
     }
     if (old.forceExit != widget.forceExit ||
@@ -287,8 +302,8 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     _liveSubscription?.cancel();
     if (widget.protectScreen != null) {
       unawaited(
-        FlutterAntiVirtualsPlatform.instance
-            .setScreenProtection(null)
+        ScreenProtectionCoordinator.instance
+            .request(this, null)
             .then<void>((_) {}, onError: (Object _) {}),
       );
     }
@@ -352,8 +367,8 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
   }
 
   void _syncProtection() {
-    FlutterAntiVirtualsPlatform.instance
-        .setScreenProtection(widget.protectScreen)
+    ScreenProtectionCoordinator.instance
+        .request(this, widget.protectScreen)
         .then<void>(
           (_) {},
           onError: (Object error, StackTrace stackTrace) {
@@ -448,15 +463,21 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
           ? const <AntiVirtualSignal>[]
           : <AntiVirtualSignal>[
               for (final signal in AntiVirtualSignal.values)
-                if (widget.blockOn.contains(signal) &&
-                    report.isDetected(signal))
+                if (widget.blockOn.contains(signal) && _blocks(report[signal]))
                   signal,
             ];
+      _blockingCheckFailed =
+          report != null && widget.blockOn.any(report.isFailed);
       if (!_blocked || !widget.waitForScan) _childAllowed = true;
     });
     if (_blocked) _dropFocus();
     _syncExit();
   }
+
+  bool _blocks(SignalResult? result) =>
+      result != null &&
+      result.detected &&
+      (widget.blockOnInstalledApps || !result.onlyInstalledApps);
 
   void _reportError(
     Object error,
@@ -526,7 +547,7 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     _cancelExit();
     final exitApp = widget.exitApp;
     if (exitApp != null) return exitApp();
-    if (Platform.isAndroid && !widget.hardExit) {
+    if (defaultTargetPlatform == TargetPlatform.android && !widget.hardExit) {
       await SystemNavigator.pop();
     } else {
       exit(0);
