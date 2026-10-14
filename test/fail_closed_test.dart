@@ -108,6 +108,28 @@ void main() {
       });
     });
 
+    test('the signed payload marks an installed-only detection', () async {
+      platform.results = {
+        AntiVirtualSignal.mockLocation: const SignalResult(
+          detected: true,
+          details: ['mock app com.lexa.fakegps'],
+          installedApps: ['mock app com.lexa.fakegps'],
+        ),
+      };
+      final signed = await FlutterAntiVirtuals.instance.verify(
+        nonce: 'nonce-from-the-backend-0001',
+        options: ScanOptions().onlyChecking(AntiVirtualSignal.mockLocation),
+      );
+      final payload = jsonDecode(signed.payload) as Map<String, Object?>;
+      expect(payload['signals'], {
+        'mockLocation': {
+          'detected': true,
+          'supported': true,
+          'installedOnly': true,
+        },
+      });
+    });
+
     test('verify refuses platforms other than Android and iOS', () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
