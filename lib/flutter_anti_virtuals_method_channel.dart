@@ -70,6 +70,16 @@ class MethodChannelFlutterAntiVirtuals extends FlutterAntiVirtualsPlatform {
     return PlatformAttestation.fromMap(raw ?? const <Object?, Object?>{});
   }
 
+  @override
+  Future<bool> preparePlayIntegrity(int cloudProjectNumber) async {
+    if (defaultTargetPlatform != TargetPlatform.android) return false;
+    final prepared = await methodChannel.invokeMethod<bool>(
+      'prepareIntegrity',
+      <String, Object?>{'cloudProjectNumber': cloudProjectNumber},
+    );
+    return prepared ?? false;
+  }
+
   // One shared stream: an event channel has a single message handler, so a
   // stream per reader would let the newest listener steal the events and the
   // first one to cancel stop them for everybody. Native starts watching with

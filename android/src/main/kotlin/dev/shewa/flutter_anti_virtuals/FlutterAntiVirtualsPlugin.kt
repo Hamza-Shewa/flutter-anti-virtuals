@@ -20,11 +20,13 @@ class FlutterAntiVirtualsPlugin : FlutterPlugin, ActivityAware, MethodCallHandle
     private var sink: EventChannel.EventSink? = null
     private val protector = ScreenProtector()
     private lateinit var context: Context
+    private lateinit var integrity: PlayIntegrity
     private var worker: ExecutorService? = null
     private val mainHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         context = binding.applicationContext
+        integrity = PlayIntegrity(context)
         worker = Executors.newSingleThreadExecutor()
         channel = MethodChannel(binding.binaryMessenger, "flutter_anti_virtuals")
         channel.setMethodCallHandler(this)
@@ -119,10 +121,30 @@ class FlutterAntiVirtualsPlugin : FlutterPlugin, ActivityAware, MethodCallHandle
                 }
                 val project = (args["cloudProjectNumber"] as? Number)?.toLong()
                 // The Play Integrity callbacks arrive on the main thread.
-                PlayIntegrity.request(context, payload, project) { outcome ->
+                val reply = { outcome: kotlin.Result<Map<String, Any>> ->
                     outcome.fold(
                         onSuccess = { result.success(it) },
                         onFailure = { result.error("attest_failed", it.message, it.javaClass.simpleName) }
+                    )
+                }
+                if (args["playIntegrity"] != "standard") {
+                    integrity.requestClassic(payload, project, reply)
+                } else if (project == null) {
+                    result.error("bad_arguments", "standard requests need a cloudProjectNumber", null)
+                } else {
+                    integrity.requestStandard(payload, project, reply)
+                }
+            }
+            "prepareIntegrity" -> {
+                val project = ((call.arguments as? Map<String, Any?>)?.get("cloudProjectNumber") as? Number)?.toLong()
+                if (project == null) {
+                    result.error("bad_arguments", "cloudProjectNumber is required", null)
+                    return
+                }
+                integrity.prepare(project) { outcome ->
+                    outcome.fold(
+                        onSuccess = { result.success(true) },
+                        onFailure = { result.error("prepare_failed", it.message, it.javaClass.simpleName) }
                     )
                 }
             }

@@ -44,6 +44,9 @@ class FlutterAntiVirtuals {
   /// Pass [attestation] to also request a Play Integrity token (Android) or
   /// an App Attest attestation / assertion (iOS) bound to the same payload,
   /// which lets the backend confirm the device and app with Google or Apple.
+  /// On Android, `AttestationOptions(playIntegrity:
+  /// PlayIntegrityRequest.standard)` uses the faster standard request; see
+  /// [preparePlayIntegrity].
   /// It is requested after signing, so a failure there throws and no
   /// half-attested report is returned.
   ///
@@ -97,6 +100,22 @@ class FlutterAntiVirtuals {
       attestation: platformAttestation,
     );
   }
+
+  /// Gets Play Integrity ready for [PlayIntegrityRequest.standard] requests
+  /// with [cloudProjectNumber], so the first [verify] that asks for one does
+  /// not wait for it. Preparing takes a few seconds; call it early, for
+  /// example at startup, and again whenever you like (a prepared provider is
+  /// reused). [verify] prepares on its own when this was not called, and
+  /// prepares again when Play reports the provider expired.
+  ///
+  /// Returns true when ready and false on platforms without Play Integrity
+  /// (iOS, desktop, web). Throws a `PlatformException` when Play cannot
+  /// prepare (no Play Store, no network, a wrong project number); `verify`
+  /// would then fail the same way.
+  Future<bool> preparePlayIntegrity({required int cloudProjectNumber}) =>
+      FlutterAntiVirtualsPlatform.instance.preparePlayIntegrity(
+        cloudProjectNumber,
+      );
 
   /// Emits when the network setup changes in a way that can turn a VPN or
   /// proxy on or off (Android: `ConnectivityManager` callbacks for VPN

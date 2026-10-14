@@ -52,6 +52,11 @@ abstract class FlutterAntiVirtualsPlatform extends PlatformInterface {
     throw UnimplementedError('requestAttestation() has not been implemented.');
   }
 
+  /// Prepares Play Integrity standard requests for [cloudProjectNumber] so a
+  /// later [requestAttestation] is fast. Returns false where there is no Play
+  /// Integrity.
+  Future<bool> preparePlayIntegrity(int cloudProjectNumber) async => false;
+
   /// Emits whenever the network setup changes in a way that can turn a VPN or
   /// proxy on or off. Platforms without live monitoring never emit.
   Stream<void> get environmentChanges => const Stream<void>.empty();

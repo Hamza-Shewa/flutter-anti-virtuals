@@ -524,3 +524,77 @@ internal class PlayIntegrityRulesTest {
         assertTrue(!PlayIntegrityRules.binding("a").contentEquals(PlayIntegrityRules.binding("b")))
     }
 }
+
+internal class PreparedCacheTest {
+    private class Prepares {
+        val pending = mutableListOf<(Result<String>) -> Unit>()
+        var count = 0
+        val cache = PreparedCache<Long, String> { key, done ->
+            count++
+            pending += { outcome -> done(outcome.map { "$it#$key" }) }
+        }
+    }
+
+    @Test
+    fun requestsWhilePreparingShareOnePreparation() {
+        val p = Prepares()
+        val seen = mutableListOf<String>()
+        p.cache.get(1) { seen += it.getOrThrow() }
+        p.cache.get(1) { seen += it.getOrThrow() }
+        assertEquals(1, p.count)
+        p.pending.removeAt(0)(Result.success("provider"))
+        assertEquals(listOf("provider#1", "provider#1"), seen)
+        p.cache.get(1) { seen += it.getOrThrow() }
+        assertEquals(1, p.count)
+    }
+
+    @Test
+    fun aFailedPreparationIsNotCached() {
+        val p = Prepares()
+        var failed = false
+        p.cache.get(1) { failed = it.isFailure }
+        p.pending.removeAt(0)(Result.failure(IllegalStateException("no Play Store")))
+        assertTrue(failed)
+        p.cache.get(1) { }
+        assertEquals(2, p.count)
+    }
+
+    @Test
+    fun aCachedValueThatFailsIsPreparedAgainOnce() {
+        val p = Prepares()
+        p.cache.get(1) { }
+        p.pending.removeAt(0)(Result.success("old"))
+        val used = mutableListOf<String>()
+        var outcome: Result<String>? = null
+        p.cache.use<String>(1, action = { value, done ->
+            used += value
+            done(if (value.startsWith("old")) Result.failure(IllegalStateException("expired")) else Result.success("token"))
+        }, onResult = { outcome = it })
+        p.pending.removeAt(0)(Result.success("new"))
+        assertEquals(listOf("old#1", "new#1"), used)
+        assertEquals("token", outcome?.getOrNull())
+        assertEquals(2, p.count)
+    }
+
+    @Test
+    fun aFreshValueThatFailsIsNotRetried() {
+        val p = Prepares()
+        var calls = 0
+        var outcome: Result<String>? = null
+        p.cache.use<String>(1, action = { _, done ->
+            calls++
+            done(Result.failure(IllegalStateException("quota")))
+        }, onResult = { outcome = it })
+        p.pending.removeAt(0)(Result.success("fresh"))
+        assertEquals(1, calls)
+        assertEquals("quota", outcome?.exceptionOrNull()?.message)
+    }
+
+    @Test
+    fun aPreparationThatThrowsReachesEveryWaiter() {
+        val cache = PreparedCache<Long, String> { _, _ -> throw IllegalStateException("boom") }
+        var failed = false
+        cache.get(1) { failed = it.isFailure }
+        assertTrue(failed)
+    }
+}
