@@ -181,7 +181,19 @@ void attestationTests() {
         'token': 'jwe',
       });
       expect(play.type, AttestationType.playIntegrity);
-      expect(play.toJson(), {'type': 'playIntegrity', 'token': 'jwe'});
+      expect(play.isStandardRequest, isFalse);
+      expect(play.toJson(), {
+        'type': 'playIntegrity',
+        'token': 'jwe',
+        'standard': false,
+      });
+      final standard = PlatformAttestation.fromMap(<Object?, Object?>{
+        'type': 'playIntegrity',
+        'token': 'jwe',
+        'standard': true,
+      });
+      expect(standard.isStandardRequest, isTrue);
+      expect(standard.toJson()['standard'], isTrue);
       expect(
         () => PlatformAttestation.fromMap(<Object?, Object?>{'type': 'x'}),
         throwsFormatException,
@@ -194,7 +206,25 @@ void attestationTests() {
           cloudProjectNumber: 7,
           resetAppAttestKey: true,
         ).toMap(),
-        {'cloudProjectNumber': 7, 'resetAppAttestKey': true},
+        {
+          'cloudProjectNumber': 7,
+          'resetAppAttestKey': true,
+          'playIntegrity': 'classic',
+        },
+      );
+      expect(
+        const AttestationOptions(
+          cloudProjectNumber: 7,
+          playIntegrity: PlayIntegrityRequest.standard,
+        ).toMap()['playIntegrity'],
+        'standard',
+      );
+    });
+
+    test('a standard request without a project number is rejected', () {
+      expect(
+        () => AttestationOptions(playIntegrity: PlayIntegrityRequest.standard),
+        throwsA(isA<AssertionError>()),
       );
     });
   });

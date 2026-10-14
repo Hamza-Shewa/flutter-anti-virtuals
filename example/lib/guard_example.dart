@@ -129,6 +129,12 @@ class _BlockedScreen extends StatelessWidget {
                     : 'Detected: ${matches.map((s) => s.name).join(', ')}.',
                 textAlign: TextAlign.center,
               ),
+              const SizedBox(height: 24),
+              // Scans again through the guard above this screen.
+              OutlinedButton(
+                onPressed: () => AntiVirtualGuard.rescan(context),
+                child: const Text('I switched it off'),
+              ),
             ],
           ),
         ),

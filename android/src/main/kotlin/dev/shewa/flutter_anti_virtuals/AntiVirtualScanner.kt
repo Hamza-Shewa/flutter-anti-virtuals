@@ -3,6 +3,7 @@ package dev.shewa.flutter_anti_virtuals
 import android.Manifest
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.annotation.SuppressLint
+import android.app.AppOpsManager
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
@@ -81,9 +82,7 @@ internal class AntiVirtualScanner(private val context: Context) {
                 // One failing check must never take the whole scan down, and must not
                 // look like a clean result either.
                 try { check().toMap() }
-                catch (t: Throwable) {
-                    Detection(false, supported = false, details = listOf("check failed: ${t.javaClass.simpleName}")).toMap()
-                }
+                catch (t: Throwable) { Detection.failed(t).toMap() }
             }
     }
 
@@ -158,8 +157,27 @@ internal class AntiVirtualScanner(private val context: Context) {
                 }
             }
         }
-        details += installed(KnownPackages.mockLocation).map { "mock app $it" }
-        return Detection.of(details.distinct())
+        val apps = installed(KnownPackages.mockLocation)
+        val (selected, unused) = Rules.mockLocationApps(apps, ::isMockLocationApp)
+        return Detection.of(details.distinct() + selected, unused)
+    }
+
+    /**
+     * True when [pkg] is the app picked under Developer options > Select mock location app: only
+     * that app has the mock location app op allowed.
+     */
+    private fun isMockLocationApp(pkg: String): Boolean {
+        val ops = context.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager ?: return false
+        val uid = try {
+            if (Build.VERSION.SDK_INT >= 33) pm.getApplicationInfo(pkg, PackageManager.ApplicationInfoFlags.of(0)).uid
+            else @Suppress("DEPRECATION") pm.getApplicationInfo(pkg, 0).uid
+        } catch (_: PackageManager.NameNotFoundException) {
+            return false
+        }
+        val mode =
+            if (Build.VERSION.SDK_INT >= 29) ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_MOCK_LOCATION, uid, pkg)
+            else @Suppress("DEPRECATION") ops.checkOpNoThrow(AppOpsManager.OPSTR_MOCK_LOCATION, uid, pkg)
+        return mode == AppOpsManager.MODE_ALLOWED
     }
 
     /** How long ago the fix was made, or null when the provider did not stamp it. */
@@ -172,7 +190,7 @@ internal class AntiVirtualScanner(private val context: Context) {
         else @Suppress("DEPRECATION") location.isFromMockProvider
 
     private fun virtualCamera(): Detection {
-        val details = installed(KnownPackages.virtualCamera).map { "virtual camera app $it" }.toMutableList()
+        val details = mutableListOf<String>()
         val cm = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
         try {
             cm?.cameraIdList?.forEach { id ->
@@ -186,7 +204,7 @@ internal class AntiVirtualScanner(private val context: Context) {
             }
         } catch (_: Throwable) {
         }
-        return Detection.of(details)
+        return Detection.of(details, installed(KnownPackages.virtualCamera).map { "virtual camera app $it" })
     }
 
     // ---- device state ---------------------------------------------------
@@ -226,11 +244,19 @@ internal class AntiVirtualScanner(private val context: Context) {
         // No debuggable exemption: a repackaged APK can set the flag itself. Builds
         // installed by tooling report no installer; exclude the signal in debug builds
         // from the Dart side if that is unwanted.
-        val installer = if (Build.VERSION.SDK_INT >= 30) pm.getInstallSourceInfo(context.packageName).installingPackageName
-        else @Suppress("DEPRECATION") pm.getInstallerPackageName(context.packageName)
-        return if (Rules.isUntrustedInstaller(installer, config.trustedInstallers)) {
-            Detection(true, details = listOf("installer: ${installer ?: "none (sideloaded)"}"))
-        } else Detection(false)
+        val details = if (Build.VERSION.SDK_INT >= 30) {
+            val source = pm.getInstallSourceInfo(context.packageName)
+            Rules.untrustedInstallerDetails(
+                installing = source.installingPackageName,
+                initiating = source.initiatingPackageName,
+                trusted = config.trustedInstallers
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            val installer = pm.getInstallerPackageName(context.packageName)
+            Rules.untrustedInstallerDetails(installer, null, config.trustedInstallers)
+        }
+        return Detection.of(details)
     }
 
     @Suppress("DEPRECATION")
@@ -352,8 +378,11 @@ internal class AntiVirtualScanner(private val context: Context) {
                     .mapNotNull { try { File(it, "comm").readText().trim() } catch (_: Throwable) { null } }
                     .toSet()
             } catch (_: Throwable) { emptySet() },
+            // Xposed lives in the system class loader, which is not a parent of the app's loader.
             loadedClasses = HookRules.CLASSES.filter { name ->
-                try { Class.forName(name, false, javaClass.classLoader); true } catch (_: Throwable) { false }
+                listOfNotNull(javaClass.classLoader, ClassLoader.getSystemClassLoader()).any { loader ->
+                    try { Class.forName(name, false, loader); true } catch (_: Throwable) { false }
+                }
             }.toSet(),
             // A hooked method of the plugin shows the hooking framework in its own call stack.
             stackClassNames = Throwable().stackTrace.map { it.className },
@@ -393,7 +422,12 @@ internal class AntiVirtualScanner(private val context: Context) {
         } catch (_: Throwable) { null }
         if (viaReflection != null) return viaReflection.filterValues { it.isNotEmpty() }
         return try {
-            val out = Runtime.getRuntime().exec(arrayOf("getprop")).inputStream.bufferedReader().use { it.readText() }
+            val process = Runtime.getRuntime().exec(arrayOf("getprop"))
+            val out = try {
+                process.inputStream.bufferedReader().use { it.readText() }
+            } finally {
+                process.destroy()
+            }
             val line = Regex("""^\[([^\]]+)\]: \[(.*)\]$""")
             out.lineSequence().mapNotNull { line.find(it.trim()) }
                 .map { it.groupValues[1] to it.groupValues[2] }

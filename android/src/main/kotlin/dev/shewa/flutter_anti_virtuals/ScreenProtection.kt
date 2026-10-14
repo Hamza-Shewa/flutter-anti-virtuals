@@ -5,6 +5,7 @@ import android.content.Context
 import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Handler
+import android.view.Window
 import android.view.WindowManager
 
 /** What `setScreenProtection` asked for. */
@@ -32,6 +33,23 @@ internal object CaptureRules {
     }
 }
 
+/** A window setting together with whether the plugin is the one that turned it on. */
+internal data class OwnedSetting(val value: Boolean, val owned: Boolean)
+
+/**
+ * Pure ownership rule for one window setting: turn it on when asked, and on release only turn
+ * off what the plugin itself turned on, so a flag the host app set (`FLAG_SECURE` in its own
+ * `onCreate`, another screen-protection package) survives `unprotectScreen()`.
+ */
+internal object ProtectionRules {
+    fun next(wanted: Boolean, current: Boolean, owned: Boolean): OwnedSetting = when {
+        wanted && current -> OwnedSetting(true, owned)
+        wanted -> OwnedSetting(true, true)
+        owned -> OwnedSetting(false, false)
+        else -> OwnedSetting(current, false)
+    }
+}
+
 /** Screen recording state reported by the system to the foreground activity (Android 15+). */
 internal object ScreenCaptureState {
     @Volatile
@@ -45,6 +63,11 @@ internal object ScreenCaptureState {
 internal class ScreenProtector {
     private var activity: Activity? = null
     private var config = ScreenProtectionConfig()
+    // What the plugin turned on in [ownedWindow]; reset when a new window is attached.
+    private var ownedWindow: Window? = null
+    private var ownsSecure = false
+    private var ownsTouchFilter = false
+    private var ownsHiddenOverlays = false
     private var recordingCallback: java.util.function.Consumer<Int>? = null
     private var onChange: () -> Unit = {}
 
@@ -71,13 +94,33 @@ internal class ScreenProtector {
 
     private fun applyTo(a: Activity) {
         val window = a.window
-        if (config.secureWindow) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        window.decorView.filterTouchesWhenObscured = config.filterObscuredTouches
+        if (window !== ownedWindow) {
+            ownedWindow = window
+            ownsSecure = false
+            ownsTouchFilter = false
+            ownsHiddenOverlays = false
+        }
+        val flag = WindowManager.LayoutParams.FLAG_SECURE
+        val secure = ProtectionRules.next(
+            config.secureWindow, window.attributes.flags and flag != 0, ownsSecure
+        )
+        if (secure.value) window.addFlags(flag) else window.clearFlags(flag)
+        ownsSecure = secure.owned
+
+        val view = window.decorView
+        val touches = ProtectionRules.next(
+            config.filterObscuredTouches, view.filterTouchesWhenObscured, ownsTouchFilter
+        )
+        view.filterTouchesWhenObscured = touches.value
+        ownsTouchFilter = touches.owned
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // There is no getter, so only what the plugin set is known to be on.
+            val overlays = ProtectionRules.next(config.hideOverlayWindows, ownsHiddenOverlays, ownsHiddenOverlays)
             try {
                 // Needs the HIDE_OVERLAY_WINDOWS permission, which the plugin's manifest declares.
-                window.setHideOverlayWindows(config.hideOverlayWindows)
+                if (overlays.value != ownsHiddenOverlays) window.setHideOverlayWindows(overlays.value)
+                ownsHiddenOverlays = overlays.owned
             } catch (_: SecurityException) {
             }
         }

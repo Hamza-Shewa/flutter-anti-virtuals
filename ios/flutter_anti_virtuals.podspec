@@ -13,7 +13,7 @@ Integrity signal scanner for Flutter apps.
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Hamza Shewa' => 'shewa.hz98@gmail.com' }
   s.source           = { :path => '.' }
-  s.source_files = 'flutter_anti_virtuals/Sources/flutter_anti_virtuals/**/*'
+  s.source_files = 'flutter_anti_virtuals/Sources/flutter_anti_virtuals/**/*.swift'
   s.dependency 'Flutter'
   s.platform = :ios, '15.0'
 
@@ -21,9 +21,6 @@ Integrity signal scanner for Flutter apps.
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
   s.swift_version = '5.0'
 
-  # If your plugin requires a privacy manifest, for example if it uses any
-  # required reason APIs, update the PrivacyInfo.xcprivacy file to describe your
-  # plugin's privacy impact, and then uncomment this line. For more information,
-  # see https://developer.apple.com/documentation/bundleresources/privacy_manifest_files
-  # s.resource_bundles = {'flutter_anti_virtuals_privacy' => ['flutter_anti_virtuals/Sources/flutter_anti_virtuals/PrivacyInfo.xcprivacy']}
+  # Declares the required-reason APIs the plugin uses (UserDefaults).
+  s.resource_bundles = {'flutter_anti_virtuals_privacy' => ['flutter_anti_virtuals/Sources/flutter_anti_virtuals/PrivacyInfo.xcprivacy']}
 end

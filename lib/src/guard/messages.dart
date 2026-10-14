@@ -11,6 +11,7 @@ class AntiVirtualMessages {
     required this.scanFailed,
     required this.closingIn,
     required this.signals,
+    this.retry = 'Try again',
     this.textDirection = TextDirection.ltr,
   });
 
@@ -24,6 +25,10 @@ class AntiVirtualMessages {
   /// Shown instead of the list when the guard blocks because a scan failed
   /// (`AntiVirtualGuard.failClosed`).
   final String scanFailed;
+
+  /// Label of the button that scans again
+  /// (`AntiVirtualGuard.showRetry`).
+  final String retry;
 
   /// Builds the "the app will close in N seconds" line. A function so each
   /// language can apply its own plural rules.
@@ -47,6 +52,7 @@ class AntiVirtualMessages {
     String? title,
     String? subtitle,
     String? scanFailed,
+    String? retry,
     String Function(int seconds)? closingIn,
     Map<AntiVirtualSignal, String>? signals,
     TextDirection? textDirection,
@@ -54,6 +60,7 @@ class AntiVirtualMessages {
     title: title ?? this.title,
     subtitle: subtitle ?? this.subtitle,
     scanFailed: scanFailed ?? this.scanFailed,
+    retry: retry ?? this.retry,
     closingIn: closingIn ?? this.closingIn,
     textDirection: textDirection ?? this.textDirection,
     signals: <AntiVirtualSignal, String>{...this.signals, ...?signals},
@@ -107,6 +114,7 @@ class AntiVirtualMessages {
     title: 'لا يمكن التحقق من هذا الجهاز',
     subtitle: 'يرجى معالجة ما يلي ثم المحاولة مرة أخرى:',
     scanFailed: 'تعذّر التحقق من هذا الجهاز. يرجى المحاولة مرة أخرى.',
+    retry: 'إعادة المحاولة',
     closingIn: _closingArabic,
     textDirection: TextDirection.rtl,
     signals: <AntiVirtualSignal, String>{
@@ -150,6 +158,7 @@ class AntiVirtualMessages {
     subtitle: 'Veuillez corriger les points suivants puis réessayer :',
     scanFailed:
         'Nous n\'avons pas pu vérifier cet appareil. Veuillez réessayer.',
+    retry: 'Réessayer',
     closingIn: _closingFrench,
     signals: <AntiVirtualSignal, String>{
       AntiVirtualSignal.vpn: 'Un VPN est actif. Désactivez-le pour continuer.',
@@ -195,6 +204,7 @@ class AntiVirtualMessages {
     title: 'No se puede verificar este dispositivo',
     subtitle: 'Soluciona lo siguiente e inténtalo de nuevo:',
     scanFailed: 'No pudimos verificar este dispositivo. Inténtalo de nuevo.',
+    retry: 'Reintentar',
     closingIn: _closingSpanish,
     signals: <AntiVirtualSignal, String>{
       AntiVirtualSignal.vpn: 'Hay una VPN activa. Desactívala para continuar.',

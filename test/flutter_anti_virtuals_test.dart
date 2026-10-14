@@ -375,4 +375,33 @@ void main() {
       throwsA(isA<PlatformException>()),
     );
   });
+
+  group('preparePlayIntegrity', () {
+    setUp(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            lastCall = call;
+            return true;
+          });
+    });
+
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('asks the native side on Android', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final ready = await MethodChannelFlutterAntiVirtuals()
+          .preparePlayIntegrity(42);
+      expect(ready, isTrue);
+      expect(lastCall?.method, 'prepareIntegrity');
+      expect(lastCall?.arguments, {'cloudProjectNumber': 42});
+    });
+
+    test('is false without a channel call elsewhere', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      final ready = await MethodChannelFlutterAntiVirtuals()
+          .preparePlayIntegrity(42);
+      expect(ready, isFalse);
+      expect(lastCall, isNull);
+    });
+  });
 }

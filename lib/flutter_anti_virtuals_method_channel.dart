@@ -24,7 +24,14 @@ class MethodChannelFlutterAntiVirtuals extends FlutterAntiVirtualsPlatform {
       'scan',
       options.toMap(),
     );
-    return AntiVirtualReport.fromMap(raw ?? const <Object?, Object?>{});
+    if (raw == null) {
+      // An empty report would read as a clean device.
+      throw PlatformException(
+        code: 'no_result',
+        message: 'The native scan returned no result',
+      );
+    }
+    return AntiVirtualReport.fromMap(raw, requested: options.enabledSignals);
   }
 
   @override
@@ -61,6 +68,16 @@ class MethodChannelFlutterAntiVirtuals extends FlutterAntiVirtualsPlatform {
       <String, Object?>{'payload': payload, ...options.toMap()},
     );
     return PlatformAttestation.fromMap(raw ?? const <Object?, Object?>{});
+  }
+
+  @override
+  Future<bool> preparePlayIntegrity(int cloudProjectNumber) async {
+    if (defaultTargetPlatform != TargetPlatform.android) return false;
+    final prepared = await methodChannel.invokeMethod<bool>(
+      'prepareIntegrity',
+      <String, Object?>{'cloudProjectNumber': cloudProjectNumber},
+    );
+    return prepared ?? false;
   }
 
   // One shared stream: an event channel has a single message handler, so a

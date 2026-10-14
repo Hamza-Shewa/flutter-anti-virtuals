@@ -93,9 +93,10 @@ class SignedReport {
   });
 
   /// Builds the text that is signed. Keys are written in a fixed order and
-  /// only `detected` and `supported` are included, so the payload stays small
-  /// and the signature does not depend on localized or device-specific
-  /// details.
+  /// only `detected` and `supported` are included (plus `failed: true` for a
+  /// check that produced no answer and `installedOnly: true` for a detection
+  /// that only rests on an installed tool), so the payload stays small and the
+  /// signature does not depend on localized or device-specific details.
   static String encodePayload({
     required String nonce,
     required DateTime issuedAt,
@@ -113,6 +114,8 @@ class SignedReport {
             signal.key: <String, Object?>{
               'detected': result.detected,
               'supported': result.supported,
+              if (result.failed) 'failed': true,
+              if (result.onlyInstalledApps) 'installedOnly': true,
             },
       },
     });

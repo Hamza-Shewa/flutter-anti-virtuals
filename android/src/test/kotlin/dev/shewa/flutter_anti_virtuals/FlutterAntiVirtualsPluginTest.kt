@@ -51,6 +51,31 @@ internal class RulesTest {
     }
 
     @Test
+    fun aSpoofedInstallerNameIsCaughtByTheInitiatingInstaller() {
+        val trusted = listOf("com.android.vending")
+        // `adb install -i com.android.vending`: the claimed installer is Play, adb started it.
+        assertEquals(
+            listOf("installer com.android.vending claimed by an install from com.android.shell"),
+            Rules.untrustedInstallerDetails("com.android.vending", "com.android.shell", trusted)
+        )
+        assertEquals(
+            emptyList(),
+            Rules.untrustedInstallerDetails("com.android.vending", "com.android.vending", trusted)
+        )
+        // A restore or setup wizard installing on behalf of Play is not a spoof.
+        assertEquals(
+            emptyList(),
+            Rules.untrustedInstallerDetails("com.android.vending", "com.google.android.apps.restore", trusted)
+        )
+        // Before Android 11, and for preloaded apps, only the installing package is known.
+        assertEquals(emptyList(), Rules.untrustedInstallerDetails("com.android.vending", null, trusted))
+        assertEquals(
+            listOf("installer: none (sideloaded)"),
+            Rules.untrustedInstallerDetails(null, "com.android.shell", trusted)
+        )
+    }
+
+    @Test
     fun clonedDataDirDetection() {
         assertFalse(Rules.isClonedDataDir("/data/user/0/a.b", "a.b", 0))
         assertFalse(Rules.isClonedDataDir("/data/user/10/a.b/", "a.b", 10))
@@ -425,6 +450,31 @@ internal class CaptureRulesTest {
     }
 
     @Test
+    fun protectionOnlyClearsWhatThePluginSet() {
+        // The host app set FLAG_SECURE itself: asking keeps it, releasing leaves it on.
+        assertEquals(OwnedSetting(true, false), ProtectionRules.next(wanted = true, current = true, owned = false))
+        assertEquals(OwnedSetting(true, false), ProtectionRules.next(wanted = false, current = true, owned = false))
+        // The plugin set it: releasing clears it.
+        assertEquals(OwnedSetting(true, true), ProtectionRules.next(wanted = true, current = false, owned = false))
+        assertEquals(OwnedSetting(false, false), ProtectionRules.next(wanted = false, current = true, owned = true))
+        assertEquals(OwnedSetting(false, false), ProtectionRules.next(wanted = false, current = false, owned = false))
+    }
+
+    @Test
+    fun detectionMapsCarryFailuresAndInstalledApps() {
+        val failed = Detection.failed(SecurityException()).toMap()
+        assertEquals(true, failed["failed"])
+        assertEquals(false, failed["detected"])
+        assertEquals("check failed: SecurityException", failed["error"])
+        assertFalse("failed" in Detection.of(emptyList()).toMap())
+
+        val installed = Detection.of(emptyList(), listOf("mock app x"))
+        assertTrue(installed.detected)
+        assertEquals(listOf("mock app x"), installed.toMap()["installedApps"])
+        assertFalse(Detection.of(emptyList(), emptyList()).detected)
+    }
+
+    @Test
     fun protectionConfigReadsTheChannelArguments() {
         assertEquals(ScreenProtectionConfig(), ScreenProtectionConfig.from(null))
         assertEquals(
@@ -472,5 +522,95 @@ internal class PlayIntegrityRulesTest {
     fun theBindingCoversNonAsciiText() {
         assertEquals(32, PlayIntegrityRules.binding("{\"nonce\":\"é\"}").size)
         assertTrue(!PlayIntegrityRules.binding("a").contentEquals(PlayIntegrityRules.binding("b")))
+    }
+}
+
+internal class PreparedCacheTest {
+    private class Prepares {
+        val pending = mutableListOf<(Result<String>) -> Unit>()
+        var count = 0
+        val cache = PreparedCache<Long, String> { key, done ->
+            count++
+            pending += { outcome -> done(outcome.map { "$it#$key" }) }
+        }
+    }
+
+    @Test
+    fun requestsWhilePreparingShareOnePreparation() {
+        val p = Prepares()
+        val seen = mutableListOf<String>()
+        p.cache.get(1) { seen += it.getOrThrow() }
+        p.cache.get(1) { seen += it.getOrThrow() }
+        assertEquals(1, p.count)
+        p.pending.removeAt(0)(Result.success("provider"))
+        assertEquals(listOf("provider#1", "provider#1"), seen)
+        p.cache.get(1) { seen += it.getOrThrow() }
+        assertEquals(1, p.count)
+    }
+
+    @Test
+    fun aFailedPreparationIsNotCached() {
+        val p = Prepares()
+        var failed = false
+        p.cache.get(1) { failed = it.isFailure }
+        p.pending.removeAt(0)(Result.failure(IllegalStateException("no Play Store")))
+        assertTrue(failed)
+        p.cache.get(1) { }
+        assertEquals(2, p.count)
+    }
+
+    @Test
+    fun aCachedValueThatFailsIsPreparedAgainOnce() {
+        val p = Prepares()
+        p.cache.get(1) { }
+        p.pending.removeAt(0)(Result.success("old"))
+        val used = mutableListOf<String>()
+        var outcome: Result<String>? = null
+        p.cache.use<String>(1, action = { value, done ->
+            used += value
+            done(if (value.startsWith("old")) Result.failure(IllegalStateException("expired")) else Result.success("token"))
+        }, onResult = { outcome = it })
+        p.pending.removeAt(0)(Result.success("new"))
+        assertEquals(listOf("old#1", "new#1"), used)
+        assertEquals("token", outcome?.getOrNull())
+        assertEquals(2, p.count)
+    }
+
+    @Test
+    fun aFreshValueThatFailsIsNotRetried() {
+        val p = Prepares()
+        var calls = 0
+        var outcome: Result<String>? = null
+        p.cache.use<String>(1, action = { _, done ->
+            calls++
+            done(Result.failure(IllegalStateException("quota")))
+        }, onResult = { outcome = it })
+        p.pending.removeAt(0)(Result.success("fresh"))
+        assertEquals(1, calls)
+        assertEquals("quota", outcome?.exceptionOrNull()?.message)
+    }
+
+    @Test
+    fun aPreparationThatThrowsReachesEveryWaiter() {
+        val cache = PreparedCache<Long, String> { _, _ -> throw IllegalStateException("boom") }
+        var failed = false
+        cache.get(1) { failed = it.isFailure }
+        assertTrue(failed)
+    }
+}
+
+internal class MockLocationAppsTest {
+    @Test
+    fun theSelectedMockAppIsActiveAndTheRestOnlyInstalled() {
+        val (active, installed) = Rules.mockLocationApps(listOf("a.fake.gps", "b.fake.gps")) { it == "b.fake.gps" }
+        assertEquals(listOf("mock location app selected: b.fake.gps"), active)
+        assertEquals(listOf("mock app a.fake.gps"), installed)
+    }
+
+    @Test
+    fun aLookupThatThrowsCountsAsNotSelected() {
+        val (active, installed) = Rules.mockLocationApps(listOf("a.fake.gps")) { throw SecurityException() }
+        assertTrue(active.isEmpty())
+        assertEquals(listOf("mock app a.fake.gps"), installed)
     }
 }

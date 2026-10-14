@@ -4,22 +4,48 @@ package dev.shewa.flutter_anti_virtuals
 internal data class Detection(
     val detected: Boolean,
     val supported: Boolean = true,
-    val details: List<String> = emptyList()
+    val details: List<String> = emptyList(),
+    /** The part of [details] that only says a known tool is installed, not that it is in use. */
+    val installedApps: List<String> = emptyList(),
+    /** Set when the check threw: the answer is unknown, which is not the same as clean. */
+    val error: String? = null
 ) {
-    fun toMap(): Map<String, Any> = mapOf(
-        "detected" to detected,
-        "supported" to supported,
-        "details" to details
-    )
+    fun toMap(): Map<String, Any> = buildMap {
+        put("detected", detected)
+        put("supported", supported)
+        put("details", details)
+        if (installedApps.isNotEmpty()) put("installedApps", installedApps)
+        if (error != null) {
+            put("failed", true)
+            put("error", error)
+        }
+    }
 
     companion object {
         val unsupported = Detection(detected = false, supported = false)
         fun of(details: List<String>) = Detection(details.isNotEmpty(), details = details)
+
+        /** Active evidence plus installed tools; either one is a detection. */
+        fun of(active: List<String>, installedApps: List<String>): Detection {
+            val details = (active + installedApps).distinct()
+            return Detection(details.isNotEmpty(), details = details, installedApps = installedApps.distinct())
+        }
+
+        fun failed(error: Throwable) = Detection(false, error = "check failed: ${error.javaClass.simpleName}")
     }
 }
 
 /** Pure decision logic, kept free of Android types so it can be unit tested. */
 internal object Rules {
+    /**
+     * Splits installed fake-GPS apps into the one selected as the mock location app, which is active
+     * evidence, and the rest, which are only installed. A failed lookup counts as not selected.
+     */
+    fun mockLocationApps(installed: List<String>, isSelected: (String) -> Boolean): Pair<List<String>, List<String>> {
+        val (selected, unused) = installed.partition { runCatching { isSelected(it) }.getOrDefault(false) }
+        return selected.map { "mock location app selected: $it" } to unused.map { "mock app $it" }
+    }
+
     fun clockDetails(
         autoTime: Boolean?,
         autoTimeZone: Boolean?,
@@ -42,6 +68,33 @@ internal object Rules {
 
     fun isUntrustedInstaller(installer: String?, trusted: Collection<String>): Boolean =
         installer == null || installer !in trusted
+
+    /**
+     * Packages that can claim any installer name. Only the shell (and root, which `rooted`
+     * reports) may pass an arbitrary `installerPackageName`, as in
+     * `adb install -i com.android.vending`; a normal app can only name itself.
+     */
+    val SPOOFING_INITIATORS = setOf("com.android.shell", "shell", "root")
+
+    /**
+     * Android 11+ records two installers: `installingPackageName`, which the caller chooses, and
+     * `initiatingPackageName`, the app that actually started the install. An install started
+     * from the shell that claims an installer is reported even when the claimed one is trusted.
+     *
+     * Other initiators are not checked against [trusted]: legitimate installs are started by
+     * apps such as the device restore or setup wizard on behalf of the store, which would
+     * otherwise flag every phone set up from a backup.
+     */
+    fun untrustedInstallerDetails(
+        installing: String?,
+        initiating: String?,
+        trusted: Collection<String>
+    ): List<String> = buildList {
+        if (isUntrustedInstaller(installing, trusted)) add("installer: ${installing ?: "none (sideloaded)"}")
+        if (installing != null && initiating != null && initiating in SPOOFING_INITIATORS) {
+            add("installer $installing claimed by an install from $initiating")
+        }
+    }
 
     fun isClonedDataDir(dataDir: String, packageName: String, userId: Int): Boolean {
         val expected = setOf(

@@ -20,7 +20,7 @@ await api.transfer(amount, attestation: signed.toJson());
 
 | Field | Meaning |
 | --- | --- |
-| `payload` | The exact text that was signed: `{"v":1,"nonce":…,"issuedAt":<ms>,"platform":"android"\|"iOS","signals":{"vpn":{"detected":false,"supported":true},…}}`. Do not re-encode it. |
+| `payload` | The exact text that was signed: `{"v":1,"nonce":…,"issuedAt":<ms>,"platform":"android"\|"iOS","signals":{"vpn":{"detected":false,"supported":true},…}}`. A check that failed on the device also carries `"failed":true`; treat it as unknown, not clean. A detection that only rests on an installed tool carries `"installedOnly":true`. Do not re-encode it. |
 | `signature` | Base64 `SHA256withECDSA` signature (DER) over the UTF-8 bytes of `payload`. |
 | `publicKey` | Base64 public key. Android: X.509 SubjectPublicKeyInfo. iOS: ANSI X9.63 uncompressed point. |
 | `protection` | `strongBox`, `hardware` or `software`. Treat `software` as no device binding. |
@@ -29,7 +29,9 @@ await api.transfer(amount, attestation: signed.toJson());
 
 ## What the server must check
 
-Do these in order and reject on the first failure.
+Do these in order and reject on the first failure. A Dart backend can use the
+[`anti_virtuals_verifier`](../packages/anti_virtuals_verifier/) package, which
+makes all of them except App Attest.
 
 1. **Nonce.** `payload.nonce` is one you issued, has not been used before and
    has not expired. Delete it as you check it. This is what stops replay.
@@ -68,9 +70,12 @@ contains the nonce, the nonce is covered too. The token is in
 Your backend calls Google's `decodeIntegrityToken` (service account, or the
 Play Integrity API with your Google Cloud project) and checks:
 
-* `requestDetails.nonce` is the URL-safe base64 without padding of the SHA-256
-  of the `payload` you received, `requestDetails.requestPackageName` is your
-  package and `timestampMillis` is recent;
+* the binding matches: the URL-safe base64 without padding of the SHA-256 of
+  the `payload` you received equals `requestDetails.nonce` for a classic
+  request, or `requestDetails.requestHash` for a standard one
+  (`attestation.standard` is `true`). Also check that
+  `requestDetails.requestPackageName` is your package and `timestampMillis`
+  is recent;
 * `appIntegrity.appRecognitionVerdict` is `PLAY_RECOGNIZED` and
   `certificateSha256Digest` is your release certificate;
 * `deviceIntegrity.deviceRecognitionVerdict` contains
@@ -78,10 +83,34 @@ Play Integrity API with your Google Cloud project) and checks:
   sensitive actions);
 * optionally `accountDetails.appLicensingVerdict` is `LICENSED`.
 
-Pass `AttestationOptions(cloudProjectNumber: ...)` unless the app is on Google
-Play and linked to that project in the Play Console. The token is a classic
-request, so the quota is per project and day: request it before sensitive
-actions, not on every launch. The app needs the `INTERNET` permission.
+Both request types are decoded with the same `decodeIntegrityToken` call.
+
+**Classic** (the default) is one self-contained request. It takes a few
+seconds and the quota is per project and day, so request it before rare,
+high-value actions. Pass `AttestationOptions(cloudProjectNumber: ...)` unless
+the app is on Google Play and linked to that project in the Play Console.
+
+**Standard** is faster and has a much higher quota, which suits checks on
+every login or payment:
+
+```dart
+// At startup: Play prepares a token provider in the background.
+await FlutterAntiVirtuals.instance
+    .preparePlayIntegrity(cloudProjectNumber: 123456789012);
+
+// Later, per request:
+final signed = await FlutterAntiVirtuals.instance.verify(
+  nonce: nonce,
+  attestation: const AttestationOptions(
+    cloudProjectNumber: 123456789012,
+    playIntegrity: PlayIntegrityRequest.standard,
+  ),
+);
+```
+
+`verify` prepares on its own if you skipped that step, and prepares again
+when Play reports the provider expired. A standard request always needs
+`cloudProjectNumber`. Either way the app needs the `INTERNET` permission.
 
 ### iOS: App Attest
 

@@ -107,13 +107,13 @@ public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHa
         [weak self] _ in self?.showPrivacyView(true)
       },
       center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) {
-        [weak self] _ in self?.showPrivacyView(UIScreen.main.isCaptured)
+        [weak self] _ in self?.showPrivacyView(Screens.isCaptured)
       },
       center.addObserver(forName: UIScreen.capturedDidChangeNotification, object: nil, queue: .main) {
-        [weak self] _ in self?.showPrivacyView(UIScreen.main.isCaptured)
+        [weak self] _ in self?.showPrivacyView(Screens.isCaptured)
       },
     ]
-    showPrivacyView(UIScreen.main.isCaptured)
+    showPrivacyView(Screens.isCaptured)
   }
 
   private func showPrivacyView(_ visible: Bool) {
@@ -193,6 +193,18 @@ public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHa
       let report = scanner.scan(wanted: wanted, maxSkewMs: skewMs, trustedMs: trustedMs)
       DispatchQueue.main.async { result(report) }
     }
+  }
+}
+
+/// The screen of the app's own window scene. `UIScreen.main` is deprecated since iOS 16 and
+/// does not follow the scene the app is shown in. Main thread only.
+enum Screens {
+  static var isCaptured: Bool {
+    let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+    let scene =
+      scenes.first(where: { $0.activationState == .foregroundActive })
+      ?? scenes.first(where: { $0.activationState == .foregroundInactive }) ?? scenes.first
+    return scene?.screen.isCaptured ?? false
   }
 }
 
@@ -474,7 +486,7 @@ final class AntiVirtualScanner {
     // UIKit state is read on the main thread; the scan runs on a worker queue.
     var details: [String] = []
     let read = {
-      if UIScreen.main.isCaptured { details.append("screen is being recorded or mirrored") }
+      if Screens.isCaptured { details.append("screen is being recorded or mirrored") }
       if UIScreen.screens.count > 1 { details.append("external display connected") }
     }
     if Thread.isMainThread { read() } else { DispatchQueue.main.sync(execute: read) }
@@ -551,13 +563,80 @@ enum DeviceKey {
   }
 }
 
+/// Where the App Attest key id is kept: the Keychain, readable only on this device. App Attest
+/// keys never leave the device, so a key id restored from a backup onto another device is
+/// useless; `UserDefaults` (used before) is backed up and restored, the Keychain item is not.
+enum AppAttestKeyStore {
+  private static let service = "dev.shewa.flutter_anti_virtuals"
+  private static let account = "dev.shewa.flutter_anti_virtuals.appAttestKeyId"
+
+  private static var query: [String: Any] {
+    [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: service,
+      kSecAttrAccount as String: account,
+    ]
+  }
+
+  static func load() -> String? {
+    var lookup = query
+    lookup[kSecReturnData as String] = true
+    lookup[kSecMatchLimit as String] = kSecMatchLimitOne
+    var item: CFTypeRef?
+    if SecItemCopyMatching(lookup as CFDictionary, &item) == errSecSuccess,
+      let data = item as? Data, let keyId = String(data: data, encoding: .utf8)
+    {
+      return keyId
+    }
+    // Move a key id stored by an earlier version out of UserDefaults.
+    let defaults = UserDefaults.standard
+    guard let legacy = defaults.string(forKey: account) else { return nil }
+    defaults.removeObject(forKey: account)
+    save(legacy)
+    return legacy
+  }
+
+  static func save(_ keyId: String) {
+    SecItemDelete(query as CFDictionary)
+    var item = query
+    item[kSecValueData as String] = Data(keyId.utf8)
+    item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+    SecItemAdd(item as CFDictionary, nil)
+  }
+
+  static func delete() {
+    SecItemDelete(query as CFDictionary)
+    UserDefaults.standard.removeObject(forKey: account)
+  }
+}
+
 /// Apple App Attest. The first request of a key returns an attestation (the backend stores the
 /// key's public key from it); every later one returns an assertion signed by that key. The client
 /// data hash is the SHA-256 of the signed payload, so the token is bound to this request.
+///
+/// Requests run one at a time, so two first requests cannot both enroll a key. A stored key that
+/// App Attest no longer knows (`DCError.invalidKey`, for example after a restore onto another
+/// device) is replaced by a newly enrolled one, which returns an attestation.
 enum AppAttest {
-  private static let storedKey = "dev.shewa.flutter_anti_virtuals.appAttestKeyId"
+  private static let queue = DispatchQueue(label: "dev.shewa.flutter_anti_virtuals.appattest")
 
   static func request(
+    payload: String, reset: Bool,
+    completion: @escaping (Result<[String: Any], DeviceKeyError>) -> Void
+  ) {
+    queue.async {
+      // App Attest calls back on its own queue, so waiting here cannot deadlock. The timeout
+      // keeps one lost callback from stalling every later request.
+      let done = DispatchSemaphore(value: 0)
+      perform(payload: payload, reset: reset) { outcome in
+        completion(outcome)
+        done.signal()
+      }
+      _ = done.wait(timeout: .now() + 60)
+    }
+  }
+
+  private static func perform(
     payload: String, reset: Bool,
     completion: @escaping (Result<[String: Any], DeviceKeyError>) -> Void
   ) {
@@ -566,25 +645,35 @@ enum AppAttest {
       completion(.failure(DeviceKeyError(message: "App Attest is not supported on this device")))
       return
     }
-    let defaults = UserDefaults.standard
-    if reset { defaults.removeObject(forKey: storedKey) }
+    if reset { AppAttestKeyStore.delete() }
     let hash = Data(SHA256.hash(data: Data(payload.utf8)))
 
-    if let keyId = defaults.string(forKey: storedKey) {
-      service.generateAssertion(keyId, clientDataHash: hash) { assertion, error in
-        guard let assertion = assertion else {
-          completion(.failure(failure(error, "could not generate an App Attest assertion")))
-          return
-        }
+    guard let keyId = AppAttestKeyStore.load() else {
+      enroll(service, hash: hash, completion: completion)
+      return
+    }
+    service.generateAssertion(keyId, clientDataHash: hash) { assertion, error in
+      if let assertion = assertion {
         completion(
           .success([
             "type": "appAttest", "token": assertion.base64EncodedString(), "keyId": keyId,
             "assertion": true,
           ]))
+        return
       }
-      return
+      if let error = error as? DCError, error.code == .invalidKey {
+        AppAttestKeyStore.delete()
+        enroll(service, hash: hash, completion: completion)
+        return
+      }
+      completion(.failure(failure(error, "could not generate an App Attest assertion")))
     }
+  }
 
+  private static func enroll(
+    _ service: DCAppAttestService, hash: Data,
+    completion: @escaping (Result<[String: Any], DeviceKeyError>) -> Void
+  ) {
     service.generateKey { keyId, error in
       guard let keyId = keyId else {
         completion(.failure(failure(error, "could not generate an App Attest key")))
@@ -596,7 +685,7 @@ enum AppAttest {
           return
         }
         // Only remembered once Apple accepted it; the backend must now store the key.
-        defaults.set(keyId, forKey: storedKey)
+        AppAttestKeyStore.save(keyId)
         completion(
           .success([
             "type": "appAttest", "token": attestation.base64EncodedString(), "keyId": keyId,

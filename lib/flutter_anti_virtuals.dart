@@ -6,11 +6,14 @@ import 'src/attestation.dart';
 import 'src/report.dart';
 import 'src/scan_options.dart';
 import 'src/screen_protection.dart';
+import 'src/screen_protection_coordinator.dart';
 import 'src/signed_report.dart';
 import 'src/signal.dart';
 
 export 'src/guard/anti_virtual_guard.dart';
 export 'src/guard/messages.dart';
+export 'src/monitor/anti_virtual_monitor.dart';
+export 'src/monitor/guard_state.dart';
 export 'src/attestation.dart';
 export 'src/report.dart';
 export 'src/scan_options.dart';
@@ -25,7 +28,8 @@ class FlutterAntiVirtuals {
   static final FlutterAntiVirtuals instance = FlutterAntiVirtuals._();
 
   /// Runs the requested checks and returns what was found. A check that fails
-  /// natively is reported as unsupported (not as clean). Channel errors such as
+  /// natively, or that the native side leaves out, is reported as
+  /// [SignalResult.failed] (unknown, not clean). Channel errors such as
   /// `PlatformException` or `MissingPluginException` propagate; treat them as a
   /// failed scan rather than a clean device.
   Future<AntiVirtualReport> scan([ScanOptions? options]) =>
@@ -40,10 +44,14 @@ class FlutterAntiVirtuals {
   /// Pass [attestation] to also request a Play Integrity token (Android) or
   /// an App Attest attestation / assertion (iOS) bound to the same payload,
   /// which lets the backend confirm the device and app with Google or Apple.
+  /// On Android, `AttestationOptions(playIntegrity:
+  /// PlayIntegrityRequest.standard)` uses the faster standard request; see
+  /// [preparePlayIntegrity].
   /// It is requested after signing, so a failure there throws and no
   /// half-attested report is returned.
   ///
-  /// Throws an [ArgumentError] for a short [nonce]; native failures propagate
+  /// Throws an [ArgumentError] for a short [nonce] and an [UnsupportedError]
+  /// on platforms other than Android and iOS; native failures propagate
   /// as `PlatformException` and must be treated as an unverified device.
   Future<SignedReport> verify({
     required String nonce,
@@ -57,11 +65,15 @@ class FlutterAntiVirtuals {
         'must be at least 16 characters, issued by your backend',
       );
     }
+    final platform = switch (defaultTargetPlatform) {
+      TargetPlatform.android => 'android',
+      TargetPlatform.iOS => 'iOS',
+      final other => throw UnsupportedError(
+        'verify() is only available on Android and iOS, not ${other.name}',
+      ),
+    };
     final report = await scan(options);
     final issuedAt = DateTime.now().toUtc();
-    final platform = defaultTargetPlatform == TargetPlatform.iOS
-        ? 'iOS'
-        : 'android';
     final payload = SignedReport.encodePayload(
       nonce: nonce,
       issuedAt: issuedAt,
@@ -89,6 +101,22 @@ class FlutterAntiVirtuals {
     );
   }
 
+  /// Gets Play Integrity ready for [PlayIntegrityRequest.standard] requests
+  /// with [cloudProjectNumber], so the first [verify] that asks for one does
+  /// not wait for it. Preparing takes a few seconds; call it early, for
+  /// example at startup, and again whenever you like (a prepared provider is
+  /// reused). [verify] prepares on its own when this was not called, and
+  /// prepares again when Play reports the provider expired.
+  ///
+  /// Returns true when ready and false on platforms without Play Integrity
+  /// (iOS, desktop, web). Throws a `PlatformException` when Play cannot
+  /// prepare (no Play Store, no network, a wrong project number); `verify`
+  /// would then fail the same way.
+  Future<bool> preparePlayIntegrity({required int cloudProjectNumber}) =>
+      FlutterAntiVirtualsPlatform.instance.preparePlayIntegrity(
+        cloudProjectNumber,
+      );
+
   /// Emits when the network setup changes in a way that can turn a VPN or
   /// proxy on or off (Android: `ConnectivityManager` callbacks for VPN
   /// transport and proxy changes; iOS: `NWPathMonitor`) and when the screen
@@ -109,13 +137,17 @@ class FlutterAntiVirtuals {
   /// when one is) or when the platform has no such protection.
   ///
   /// [AntiVirtualGuard.protectScreen] does this for you while it is mounted.
+  /// Requests from guards and from this method are combined: the window stays
+  /// protected while any of them still asks for it.
   Future<bool> protectScreen([
     ScreenProtectionOptions options = const ScreenProtectionOptions(),
-  ]) => FlutterAntiVirtualsPlatform.instance.setScreenProtection(options);
+  ]) => ScreenProtectionCoordinator.instance.request(this, options);
 
-  /// Removes what [protectScreen] applied.
+  /// Withdraws what [protectScreen] asked for. Protections a mounted guard
+  /// still needs stay on, and flags your app set on the window itself are
+  /// never cleared.
   Future<bool> unprotectScreen() =>
-      FlutterAntiVirtualsPlatform.instance.setScreenProtection(null);
+      ScreenProtectionCoordinator.instance.request(this, null);
 
   /// Convenience for a single check.
   Future<SignalResult> check(
