@@ -1,0 +1,22 @@
+name: Publish anti_virtuals_verifier to pub.dev
+
+# Publishes packages/anti_virtuals_verifier when a tag such as
+# `anti_virtuals_verifier-v0.1.0` is pushed. The plugin's own workflow only
+# reacts to `v<version>` tags, so the two packages release independently.
+# One-time setup on pub.dev, after the first version was uploaded by hand:
+# Admin tab of anti_virtuals_verifier -> Automated publishing -> enable
+# "Publishing from GitHub Actions" for this repository with the tag pattern
+# `anti_virtuals_verifier-v{{version}}`.
+on:
+  push:
+    tags:
+      - 'anti_virtuals_verifier-v[0-9]+.[0-9]+.[0-9]+*'
+
+jobs:
+  publish:
+    permissions:
+      id-token: write # Required for authentication using OIDC
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
+    with:
+      environment: pub.dev
+      working-directory: packages/anti_virtuals_verifier
