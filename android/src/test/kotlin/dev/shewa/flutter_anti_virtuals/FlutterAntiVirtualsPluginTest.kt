@@ -51,6 +51,31 @@ internal class RulesTest {
     }
 
     @Test
+    fun aSpoofedInstallerNameIsCaughtByTheInitiatingInstaller() {
+        val trusted = listOf("com.android.vending")
+        // `adb install -i com.android.vending`: the claimed installer is Play, adb started it.
+        assertEquals(
+            listOf("installer com.android.vending claimed by an install from com.android.shell"),
+            Rules.untrustedInstallerDetails("com.android.vending", "com.android.shell", trusted)
+        )
+        assertEquals(
+            emptyList(),
+            Rules.untrustedInstallerDetails("com.android.vending", "com.android.vending", trusted)
+        )
+        // A restore or setup wizard installing on behalf of Play is not a spoof.
+        assertEquals(
+            emptyList(),
+            Rules.untrustedInstallerDetails("com.android.vending", "com.google.android.apps.restore", trusted)
+        )
+        // Before Android 11, and for preloaded apps, only the installing package is known.
+        assertEquals(emptyList(), Rules.untrustedInstallerDetails("com.android.vending", null, trusted))
+        assertEquals(
+            listOf("installer: none (sideloaded)"),
+            Rules.untrustedInstallerDetails(null, "com.android.shell", trusted)
+        )
+    }
+
+    @Test
     fun clonedDataDirDetection() {
         assertFalse(Rules.isClonedDataDir("/data/user/0/a.b", "a.b", 0))
         assertFalse(Rules.isClonedDataDir("/data/user/10/a.b/", "a.b", 10))
@@ -422,6 +447,31 @@ internal class CaptureRulesTest {
             CaptureRules.details(listOf("Wi-Fi Display", "HDMI Screen"), null)
         )
         assertEquals(listOf("screen is being recorded"), CaptureRules.details(emptyList(), true))
+    }
+
+    @Test
+    fun protectionOnlyClearsWhatThePluginSet() {
+        // The host app set FLAG_SECURE itself: asking keeps it, releasing leaves it on.
+        assertEquals(OwnedSetting(true, false), ProtectionRules.next(wanted = true, current = true, owned = false))
+        assertEquals(OwnedSetting(true, false), ProtectionRules.next(wanted = false, current = true, owned = false))
+        // The plugin set it: releasing clears it.
+        assertEquals(OwnedSetting(true, true), ProtectionRules.next(wanted = true, current = false, owned = false))
+        assertEquals(OwnedSetting(false, false), ProtectionRules.next(wanted = false, current = true, owned = true))
+        assertEquals(OwnedSetting(false, false), ProtectionRules.next(wanted = false, current = false, owned = false))
+    }
+
+    @Test
+    fun detectionMapsCarryFailuresAndInstalledApps() {
+        val failed = Detection.failed(SecurityException()).toMap()
+        assertEquals(true, failed["failed"])
+        assertEquals(false, failed["detected"])
+        assertEquals("check failed: SecurityException", failed["error"])
+        assertFalse("failed" in Detection.of(emptyList()).toMap())
+
+        val installed = Detection.of(emptyList(), listOf("mock app x"))
+        assertTrue(installed.detected)
+        assertEquals(listOf("mock app x"), installed.toMap()["installedApps"])
+        assertFalse(Detection.of(emptyList(), emptyList()).detected)
     }
 
     @Test
