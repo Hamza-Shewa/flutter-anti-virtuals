@@ -20,7 +20,7 @@ await api.transfer(amount, attestation: signed.toJson());
 
 | Field | Meaning |
 | --- | --- |
-| `payload` | The exact text that was signed: `{"v":1,"nonce":…,"issuedAt":<ms>,"platform":"android"\|"iOS","signals":{"vpn":{"detected":false,"supported":true},…}}`. A check that failed on the device also carries `"failed":true`; treat it as unknown, not clean. Do not re-encode it. |
+| `payload` | The exact text that was signed: `{"v":1,"nonce":…,"issuedAt":<ms>,"platform":"android"\|"iOS","signals":{"vpn":{"detected":false,"supported":true},…}}`. A check that failed on the device also carries `"failed":true`; treat it as unknown, not clean. A detection that only rests on an installed tool carries `"installedOnly":true`. Do not re-encode it. |
 | `signature` | Base64 `SHA256withECDSA` signature (DER) over the UTF-8 bytes of `payload`. |
 | `publicKey` | Base64 public key. Android: X.509 SubjectPublicKeyInfo. iOS: ANSI X9.63 uncompressed point. |
 | `protection` | `strongBox`, `hardware` or `software`. Treat `software` as no device binding. |
@@ -29,7 +29,9 @@ await api.transfer(amount, attestation: signed.toJson());
 
 ## What the server must check
 
-Do these in order and reject on the first failure.
+Do these in order and reject on the first failure. A Dart backend can use the
+[`anti_virtuals_verifier`](../packages/anti_virtuals_verifier/) package, which
+makes all of them except App Attest.
 
 1. **Nonce.** `payload.nonce` is one you issued, has not been used before and
    has not expired. Delete it as you check it. This is what stops replay.

@@ -1,5 +1,30 @@
 ## Unreleased
 
+* `AntiVirtualMonitor` runs the guard's scans and blocking decision without a
+  widget. It is a `ValueListenable<GuardState>` (`GuardScanning`,
+  `GuardAllowed`, `GuardBlocked`) with a `reports` stream, for state
+  management layers and for gating single actions. `AntiVirtualGuard` is now
+  built on it and exposes it with `AntiVirtualGuard.monitorOf(context)`.
+* The built-in blocked screen has a Try again button (`showRetry`, translated
+  in all four languages), and a custom screen can call
+  `AntiVirtualGuard.rescan(context)`.
+* Web, macOS, Windows and Linux are registered platforms. Every check reports
+  unsupported there instead of throwing `MissingPluginException`, and the
+  guard compiles for the web.
+* Play Integrity standard requests:
+  `AttestationOptions(playIntegrity: PlayIntegrityRequest.standard)` and
+  `FlutterAntiVirtuals.instance.preparePlayIntegrity()`. The token binds the
+  payload through `requestHash`, and the attestation JSON has `standard: true`.
+  Classic requests stay the default.
+* Android: `mockLocation` reports the app selected as mock location app in
+  the developer options as an active detection.
+* The signed payload marks a detection that rests only on an installed tool
+  with `"installedOnly": true`.
+* New `anti_virtuals_verifier` package (in `packages/`) that checks signed
+  reports on a Dart server: nonce, age, signature, Android key attestation,
+  Play Integrity verdicts and a signal policy.
+* CI runs the integration tests on an Android emulator and the iOS Simulator.
+* The README is reorganized.
 * **Failed checks are no longer clean.** A native check that throws, a signal
   the native side leaves out and a `null` scan reply used to read as "not
   detected". Now a failed check is `SignalResult.failed` (with `error`),
