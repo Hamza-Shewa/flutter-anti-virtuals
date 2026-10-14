@@ -4,18 +4,25 @@
 #
 # On a freshly booted emulator or Simulator, `flutter test` sometimes launches
 # the app and then never reports back, and waits until the job times out.
-# Each attempt is therefore limited to five minutes, and only such a hang gets
-# one more attempt; a failing test fails the job right away. The device log is
-# printed after every failed attempt. The tests log "integration test: <name>"
-# when each one starts, so the log shows where a hang happened.
+# Each attempt is therefore limited (INTEGRATION_TEST_LIMIT seconds, five
+# minutes by default; on iOS the limit also has to cover the Xcode build that
+# `flutter test` runs), and only such a hang gets one more attempt; a failing
+# test fails the job right away. The device log is printed after every failed
+# attempt. The tests log "integration test: <name>" when each one starts, so
+# the log shows where a hang happened.
 #
 # Written for the bash 3.2 that macOS ships, which has no `timeout`.
 
 android_app=dev.shewa.flutter_anti_virtuals_example
 ios_app=dev.shewa.flutterAntiVirtualsExample
 udid=${SIMULATOR_UDID:-}
-limit=300
+limit=${INTEGRATION_TEST_LIMIT:-300}
 timed_out=124
+
+# Job control puts every background job in its own process group, so a stop
+# reaches flutter and everything it started (xcodebuild, simctl, adb), not
+# only the subshell around it.
+set -m
 
 # Runs "$@" and returns its status, or $timed_out when it ran past $limit
 # seconds and had to be stopped.
@@ -28,15 +35,17 @@ run_limited() {
   (
     sleep "$limit"
     touch "$flag"
-    kill -TERM "$pid" 2>/dev/null
+    kill -TERM -- "-$pid" 2>/dev/null
     sleep 10
-    kill -KILL "$pid" 2>/dev/null
+    kill -KILL -- "-$pid" 2>/dev/null
   ) &
   local watchdog=$!
   wait "$pid"
   local status=$?
-  kill "$watchdog" 2>/dev/null
+  kill -- "-$watchdog" 2>/dev/null
   wait "$watchdog" 2>/dev/null
+  # Anything the test run left behind goes too.
+  kill -KILL -- "-$pid" 2>/dev/null
   if [ -e "$flag" ]; then
     rm -f "$flag"
     return "$timed_out"

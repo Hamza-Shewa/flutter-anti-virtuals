@@ -113,7 +113,7 @@ jobs:
   ios:
     name: Build (iOS)
     runs-on: macos-latest
-    timeout-minutes: 40
+    timeout-minutes: 50
     steps:
       # Swift Package Manager derives a package's identity from its directory name, and Flutter
       # links a path plugin by that name, so the checkout directory has to be the plugin name
@@ -142,15 +142,19 @@ jobs:
           print(next(d['udid'] for runtime, list_ in devices.items() if 'iOS' in runtime
                      for d in list_ if d['name'].startswith('iPhone')))")
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      - name: Boot the Simulator
+        run: xcrun simctl bootstatus "${{ steps.simulator.outputs.udid }}" -b
+      # Without parallel testing xcodebuild uses the booted Simulator instead of booting a clone.
       - name: Swift unit tests (Simulator)
         working-directory: flutter_anti_virtuals/example/ios
         run: |
           xcodebuild test -workspace Runner.xcworkspace -scheme Runner \
-            -destination "id=${{ steps.simulator.outputs.udid }}" -quiet
+            -destination "id=${{ steps.simulator.outputs.udid }}" \
+            -parallel-testing-enabled NO -quiet
+      # The limit covers the Xcode build that `flutter test` runs before the tests.
       - name: Integration tests (Simulator)
         working-directory: flutter_anti_virtuals/example
         env:
           SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
-        run: |
-          xcrun simctl boot "$SIMULATOR_UDID" || true
-          ../.github/scripts/integration_tests.sh
+          INTEGRATION_TEST_LIMIT: 600
+        run: ../.github/scripts/integration_tests.sh
