@@ -1,0 +1,4 @@
+# The root .pubignore excludes this folder from the plugin; publish it whole here.
+!*
+.*
+pubspec.lock

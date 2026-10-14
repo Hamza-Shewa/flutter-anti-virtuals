@@ -32,6 +32,23 @@ jobs:
       - name: Publish dry run
         run: dart pub publish --dry-run
 
+  verifier:
+    name: Server verifier (Dart)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: packages/anti_virtuals_verifier
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+      - run: dart pub get
+      - run: dart format --output=none --set-exit-if-changed lib test example
+      - run: dart analyze --fatal-infos
+      - run: dart test
+      - name: Publish dry run
+        run: dart pub publish --dry-run
+
   android:
     name: Build and unit-test (Android)
     runs-on: ubuntu-latest
