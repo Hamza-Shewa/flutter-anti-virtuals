@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io' show exit;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart'
@@ -9,6 +8,7 @@ import 'package:flutter/services.dart';
 
 import '../monitor/anti_virtual_monitor.dart';
 import '../monitor/guard_state.dart';
+import '../platform/process_exit.dart' if (dart.library.io) 'dart:io' show exit;
 import '../report.dart';
 import '../scan_options.dart';
 import '../screen_protection.dart';

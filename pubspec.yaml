@@ -12,10 +12,12 @@ topics:
 
 environment:
   sdk: ^3.10.0
-  flutter: '>=3.3.0'
+  flutter: '>=3.38.0'
 
 dependencies:
   flutter:
+    sdk: flutter
+  flutter_web_plugins:
     sdk: flutter
   plugin_platform_interface: ^2.0.2
 
@@ -46,6 +48,19 @@ flutter:
         pluginClass: FlutterAntiVirtualsPlugin
       ios:
         pluginClass: FlutterAntiVirtualsPlugin
+      # No native checks on these platforms: every signal reports unsupported.
+      macos:
+        dartPluginClass: FlutterAntiVirtualsUnsupported
+        dartFileName: src/platform/unsupported_platform.dart
+      windows:
+        dartPluginClass: FlutterAntiVirtualsUnsupported
+        dartFileName: src/platform/unsupported_platform.dart
+      linux:
+        dartPluginClass: FlutterAntiVirtualsUnsupported
+        dartFileName: src/platform/unsupported_platform.dart
+      web:
+        pluginClass: FlutterAntiVirtualsWeb
+        fileName: src/platform/web_plugin.dart
 
   # To add assets to your plugin package, add an assets section, like this:
   # assets:
