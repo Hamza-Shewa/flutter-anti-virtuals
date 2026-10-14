@@ -1,4 +1,4 @@
-## Unreleased
+## 0.2.0
 
 * `AntiVirtualMonitor` runs the guard's scans and blocking decision without a
   widget. It is a `ValueListenable<GuardState>` (`GuardScanning`,
