@@ -1,5 +1,7 @@
 package dev.shewa.flutter_anti_virtuals
 
+import android.media.AudioManager
+import com.google.android.play.core.integrity.model.IntegrityDialogResponseCode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -108,8 +110,50 @@ internal class RulesTest {
             .map { it.groupValues[1] }.toSet()
         val known = KnownPackages.mockLocation + KnownPackages.remoteControl +
             KnownPackages.virtualCamera + KnownPackages.cloners + KnownPackages.emulator +
-            KnownPackages.root + KnownPackages.hooking
+            KnownPackages.root + KnownPackages.hooking + KnownPackages.automation
         assertEquals(known, queried)
+    }
+}
+
+internal class FraudRulesTest {
+    @Test
+    fun cellularAndVoipCallsAreReported() {
+        assertEquals(listOf("phone call in progress"), FraudRules.callDetails(AudioManager.MODE_IN_CALL))
+        assertEquals(listOf("phone call in progress"), FraudRules.callDetails(AudioManager.MODE_CALL_SCREENING))
+        assertEquals(
+            listOf("voice or video call in progress"),
+            FraudRules.callDetails(AudioManager.MODE_IN_COMMUNICATION)
+        )
+    }
+
+    @Test
+    fun ringingOrNormalIsNoCall() {
+        assertTrue(FraudRules.callDetails(AudioManager.MODE_NORMAL).isEmpty())
+        assertTrue(FraudRules.callDetails(AudioManager.MODE_RINGTONE).isEmpty())
+        assertTrue(FraudRules.callDetails(AudioManager.MODE_INVALID).isEmpty())
+    }
+
+    @Test
+    fun onlyAnUnsecuredDeviceIsReported() {
+        assertTrue(FraudRules.screenLockDetails(deviceSecure = true).isEmpty())
+        assertEquals(1, FraudRules.screenLockDetails(deviceSecure = false).size)
+    }
+
+    @Test
+    fun dataWithoutItsDeviceKeyWasMigrated() {
+        assertEquals(BindingState.UNBOUND, FraudRules.binding(null) { true })
+        assertEquals(BindingState.BOUND, FraudRules.binding("a") { it == "a" })
+        assertEquals(BindingState.MIGRATED, FraudRules.binding("a") { false })
+    }
+}
+
+internal class PlayIntegrityDialogTest {
+    @Test
+    fun responseCodesAreNamed() {
+        assertEquals("successful", PlayIntegrityRules.dialogResult(IntegrityDialogResponseCode.DIALOG_SUCCESSFUL))
+        assertEquals("cancelled", PlayIntegrityRules.dialogResult(IntegrityDialogResponseCode.DIALOG_CANCELLED))
+        assertEquals("failed", PlayIntegrityRules.dialogResult(IntegrityDialogResponseCode.DIALOG_FAILED))
+        assertEquals("unavailable", PlayIntegrityRules.dialogResult(IntegrityDialogResponseCode.DIALOG_UNAVAILABLE))
     }
 }
 

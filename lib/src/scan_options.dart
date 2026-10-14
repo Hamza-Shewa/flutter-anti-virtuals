@@ -5,8 +5,9 @@ import 'signal.dart';
 /// Configures a scan.
 ///
 /// Every `check*` flag defaults to `true`, except [checkSignatureMismatch]
-/// which is only meaningful with [expectedSignatureSha256] and therefore
-/// defaults to "on when hashes are provided" (see its documentation). The
+/// which is only meaningful with [expectedSignatureSha256] or
+/// [expectedTeamIds] and therefore defaults to "on when either is provided"
+/// (see its documentation). The
 /// constructor asserts that checks which need configuration receive it, so a
 /// misconfigured scan fails in debug builds instead of silently doing nothing.
 class ScanOptions {
@@ -22,6 +23,7 @@ class ScanOptions {
     this.checkHooked = true,
     this.checkDebugger = true,
     this.checkScreenCapture = true,
+    this.checkAutomation = true,
     this.checkDeveloperOptions = true,
     this.checkAdb = true,
     this.checkClockTampering = true,
@@ -32,15 +34,22 @@ class ScanOptions {
     this.checkClonedApp = true,
     this.checkUserCertificates = true,
     this.checkSideloaded = true,
+    this.checkActiveCall = true,
+    this.checkNoScreenLock = true,
+    this.checkAppDataMigrated = true,
     this.expectedSignatureSha256 = const <String>[],
+    this.expectedTeamIds = const <String>[],
     this.trustedInstallers = defaultTrustedInstallers,
     this.allowedAccessibilityServices = const <String>[],
     this.maxClockSkew = const Duration(minutes: 5),
     this.trustedTime,
   }) : assert(
-         checkSignatureMismatch != true || expectedSignatureSha256.isNotEmpty,
-         'checkSignatureMismatch requires expectedSignatureSha256 to be '
-         'provided (or set checkSignatureMismatch to false).',
+         checkSignatureMismatch != true ||
+             expectedSignatureSha256.isNotEmpty ||
+             expectedTeamIds.isNotEmpty,
+         'checkSignatureMismatch requires expectedSignatureSha256 (Android) '
+         'or expectedTeamIds (iOS) to be provided (or set '
+         'checkSignatureMismatch to false).',
        ),
        assert(
          !checkUntrustedInstaller || trustedInstallers.isNotEmpty,
@@ -93,6 +102,12 @@ class ScanOptions {
   /// recording on Android 15+; iOS: `UIScreen.isCaptured` and extra screens).
   final bool checkScreenCapture;
 
+  /// The app is driven by a tool instead of a person. Android: the monkey
+  /// tester, test harness mode, a connected UiAutomation (UI Automator,
+  /// Appium) and installed automation helpers; web: `navigator.webdriver`
+  /// and headless Chrome. iOS gives an app no way to tell.
+  final bool checkAutomation;
+
   /// Android developer options enabled.
   final bool checkDeveloperOptions;
 
@@ -105,11 +120,15 @@ class ScanOptions {
   /// Installer not in [trustedInstallers].
   final bool checkUntrustedInstaller;
 
-  /// Signing certificate differs from [expectedSignatureSha256].
+  /// The app was signed by someone else: on Android a signing certificate
+  /// that is not in [expectedSignatureSha256], on iOS a team ID that is not
+  /// in [expectedTeamIds] or an App Store binary whose encryption was
+  /// stripped.
   ///
-  /// Needs [expectedSignatureSha256]. `null` (the default) means "run when
-  /// hashes are provided"; passing `true` without hashes is an assertion
-  /// failure, `false` turns the check off.
+  /// `null` (the default) means "run when [expectedSignatureSha256] or
+  /// [expectedTeamIds] is provided"; passing `true` without either is an
+  /// assertion failure, `false` turns the check off. A platform whose list
+  /// is empty reports the check as unsupported.
   final bool? checkSignatureMismatch;
 
   /// Non-system accessibility services that can read the screen.
@@ -127,9 +146,30 @@ class ScanOptions {
   /// iOS build with an embedded provisioning profile.
   final bool checkSideloaded;
 
+  /// A phone call (cellular or VoIP) is in progress. Scammers keep victims
+  /// on the line while they approve a payment. Android reads the audio mode
+  /// and needs no permission. iOS asks CallKit, which the plugin loads only
+  /// when this check runs: apps in the China App Store, where CallKit is not
+  /// allowed, should turn this off.
+  final bool checkActiveCall;
+
+  /// The device has no PIN, pattern, password or passcode.
+  final bool checkNoScreenLock;
+
+  /// The app's data was restored from a backup or copied from another
+  /// device: a marker the plugin keeps in the app's preferences is there, but
+  /// the key it created on this device next to it is not. It stays detected
+  /// until [FlutterAntiVirtuals.rebindDevice] is called, for example after
+  /// the user signs in again.
+  final bool checkAppDataMigrated;
+
   /// Lower-case hex SHA-256 digests of the release signing certificate(s).
-  /// Required by [checkSignatureMismatch].
+  /// Used by [checkSignatureMismatch] on Android.
   final List<String> expectedSignatureSha256;
+
+  /// Apple Developer team IDs (ten characters, such as `ABCDE12345`) allowed
+  /// to sign the app. Used by [checkSignatureMismatch] on iOS.
+  final List<String> expectedTeamIds;
 
   /// Android installer package names considered trustworthy. An app with no
   /// installer (adb, tooling) is always reported, including debug builds.
@@ -161,6 +201,7 @@ class ScanOptions {
           other.checkHooked == checkHooked &&
           other.checkDebugger == checkDebugger &&
           other.checkScreenCapture == checkScreenCapture &&
+          other.checkAutomation == checkAutomation &&
           other.checkDeveloperOptions == checkDeveloperOptions &&
           other.checkAdb == checkAdb &&
           other.checkClockTampering == checkClockTampering &&
@@ -171,7 +212,11 @@ class ScanOptions {
           other.checkClonedApp == checkClonedApp &&
           other.checkUserCertificates == checkUserCertificates &&
           other.checkSideloaded == checkSideloaded &&
+          other.checkActiveCall == checkActiveCall &&
+          other.checkNoScreenLock == checkNoScreenLock &&
+          other.checkAppDataMigrated == checkAppDataMigrated &&
           listEquals(other.expectedSignatureSha256, expectedSignatureSha256) &&
+          listEquals(other.expectedTeamIds, expectedTeamIds) &&
           listEquals(other.trustedInstallers, trustedInstallers) &&
           listEquals(
             other.allowedAccessibilityServices,
@@ -191,6 +236,7 @@ class ScanOptions {
     checkHooked,
     checkDebugger,
     checkScreenCapture,
+    checkAutomation,
     checkDeveloperOptions,
     checkAdb,
     checkClockTampering,
@@ -201,7 +247,11 @@ class ScanOptions {
     checkClonedApp,
     checkUserCertificates,
     checkSideloaded,
+    checkActiveCall,
+    checkNoScreenLock,
+    checkAppDataMigrated,
     Object.hashAll(expectedSignatureSha256),
+    Object.hashAll(expectedTeamIds),
     Object.hashAll(trustedInstallers),
     Object.hashAll(allowedAccessibilityServices),
     maxClockSkew,
@@ -219,17 +269,22 @@ class ScanOptions {
     if (checkHooked) AntiVirtualSignal.hooked,
     if (checkDebugger) AntiVirtualSignal.debugger,
     if (checkScreenCapture) AntiVirtualSignal.screenCapture,
+    if (checkAutomation) AntiVirtualSignal.automation,
     if (checkDeveloperOptions) AntiVirtualSignal.developerOptions,
     if (checkAdb) AntiVirtualSignal.adb,
     if (checkClockTampering) AntiVirtualSignal.clockTampering,
     if (checkUntrustedInstaller) AntiVirtualSignal.untrustedInstaller,
-    if (checkSignatureMismatch ?? expectedSignatureSha256.isNotEmpty)
+    if (checkSignatureMismatch ??
+        (expectedSignatureSha256.isNotEmpty || expectedTeamIds.isNotEmpty))
       AntiVirtualSignal.signatureMismatch,
     if (checkAccessibilityAbuse) AntiVirtualSignal.accessibilityAbuse,
     if (checkRemoteControlApp) AntiVirtualSignal.remoteControlApp,
     if (checkClonedApp) AntiVirtualSignal.clonedApp,
     if (checkUserCertificates) AntiVirtualSignal.userCertificates,
     if (checkSideloaded) AntiVirtualSignal.sideloaded,
+    if (checkActiveCall) AntiVirtualSignal.activeCall,
+    if (checkNoScreenLock) AntiVirtualSignal.noScreenLock,
+    if (checkAppDataMigrated) AntiVirtualSignal.appDataMigrated,
   };
 
   /// A copy that only evaluates [signal]; every other check is turned off.
@@ -243,6 +298,7 @@ class ScanOptions {
     checkHooked: signal == AntiVirtualSignal.hooked,
     checkDebugger: signal == AntiVirtualSignal.debugger,
     checkScreenCapture: signal == AntiVirtualSignal.screenCapture,
+    checkAutomation: signal == AntiVirtualSignal.automation,
     checkDeveloperOptions: signal == AntiVirtualSignal.developerOptions,
     checkAdb: signal == AntiVirtualSignal.adb,
     checkClockTampering: signal == AntiVirtualSignal.clockTampering,
@@ -253,7 +309,11 @@ class ScanOptions {
     checkClonedApp: signal == AntiVirtualSignal.clonedApp,
     checkUserCertificates: signal == AntiVirtualSignal.userCertificates,
     checkSideloaded: signal == AntiVirtualSignal.sideloaded,
+    checkActiveCall: signal == AntiVirtualSignal.activeCall,
+    checkNoScreenLock: signal == AntiVirtualSignal.noScreenLock,
+    checkAppDataMigrated: signal == AntiVirtualSignal.appDataMigrated,
     expectedSignatureSha256: expectedSignatureSha256,
+    expectedTeamIds: expectedTeamIds,
     trustedInstallers: trustedInstallers,
     allowedAccessibilityServices: allowedAccessibilityServices,
     maxClockSkew: maxClockSkew,
@@ -264,6 +324,9 @@ class ScanOptions {
     'signals': enabledSignals.map((s) => s.key).toList(),
     'expectedSignatureSha256': expectedSignatureSha256
         .map((s) => s.toLowerCase())
+        .toList(),
+    'expectedTeamIds': expectedTeamIds
+        .map((s) => s.trim().toUpperCase())
         .toList(),
     'trustedInstallers': trustedInstallers,
     'allowedAccessibilityServices': allowedAccessibilityServices,

@@ -29,12 +29,67 @@ class RunnerTests: XCTestCase {
   }
 
   func testAndroidOnlySignalsAreUnsupported() {
-    let report = call("scan", ["signals": ["adb", "signatureMismatch"]]) as? [String: Any]
-    for key in ["adb", "signatureMismatch"] {
+    let report =
+      call("scan", ["signals": ["adb", "signatureMismatch", "automation"]]) as? [String: Any]
+    for key in ["adb", "signatureMismatch", "automation"] {
       let result = report?[key] as? [String: Any]
       XCTAssertEqual(result?["supported"] as? Bool, false, key)
       XCTAssertEqual(result?["detected"] as? Bool, false, key)
     }
+  }
+
+  func testFraudContextSignalsAreChecked() {
+    let report =
+      call("scan", ["signals": ["activeCall", "noScreenLock", "appDataMigrated"]])
+      as? [String: Any]
+    let activeCall = report?["activeCall"] as? [String: Any]
+    XCTAssertEqual(activeCall?["supported"] as? Bool, true)
+    XCTAssertEqual(activeCall?["detected"] as? Bool, false)
+    for key in ["noScreenLock", "appDataMigrated"] {
+      XCTAssertNotNil(report?[key] as? [String: Any], key)
+    }
+  }
+
+  func testAnUnexpectedTeamIsNeverClean() {
+    let report =
+      call("scan", ["signals": ["signatureMismatch"], "expectedTeamIds": ["zzzzzzzzzz"]])
+      as? [String: Any]
+    let result = report?["signatureMismatch"] as? [String: Any]
+    XCTAssertTrue(
+      (result?["detected"] as? Bool) == true || (result?["failed"] as? Bool) == true,
+      "\(String(describing: result))")
+  }
+
+  func testIntegrityRules() {
+    XCTAssertEqual(
+      AppIntegrityRules.details(
+        teamId: "ABCDE12345", expected: ["ABCDE12345"], appStoreBuild: true, encrypted: true), [])
+    XCTAssertEqual(
+      AppIntegrityRules.details(
+        teamId: "OTHER12345", expected: ["ABCDE12345"], appStoreBuild: false, encrypted: false),
+      ["signed by team OTHER12345"])
+    XCTAssertEqual(
+      AppIntegrityRules.details(
+        teamId: "ABCDE12345", expected: ["ABCDE12345"], appStoreBuild: true, encrypted: false),
+      ["the app binary was decrypted"])
+  }
+
+  func testBindingRules() {
+    XCTAssertEqual(BindingState.of(dataId: nil, deviceId: "a"), .unbound)
+    XCTAssertEqual(BindingState.of(dataId: "a", deviceId: "a"), .bound)
+    XCTAssertEqual(BindingState.of(dataId: "a", deviceId: nil), .migrated)
+    XCTAssertEqual(BindingState.of(dataId: "a", deviceId: "b"), .migrated)
+  }
+
+  func testDataWithoutItsKeychainIdCameFromElsewhere() throws {
+    let first = DeviceBinding.detection()
+    try XCTSkipIf(first.error != nil, "no Keychain access in this test host")
+    XCTAssertFalse(first.detected)
+    // What a restore onto another device looks like: the data arrives, the Keychain item not.
+    KeychainItem(account: "dev.shewa.flutter_anti_virtuals.binding").delete()
+    XCTAssertTrue(DeviceBinding.detection().detected)
+    XCTAssertEqual(call("rebindDevice") as? Bool, true)
+    XCTAssertFalse(DeviceBinding.detection().detected)
   }
 
   func testSignPayloadReturnsAKeyAndSignature() {

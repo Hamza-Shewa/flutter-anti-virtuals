@@ -35,6 +35,7 @@ class AttestationOptions {
     this.cloudProjectNumber,
     this.resetAppAttestKey = false,
     this.playIntegrity = PlayIntegrityRequest.classic,
+    this.deviceCheck = false,
   }) : assert(
          playIntegrity == PlayIntegrityRequest.classic ||
              cloudProjectNumber != null,
@@ -60,10 +61,19 @@ class AttestationOptions {
   /// request that never reached it, a reinstall or a database reset).
   final bool resetAppAttestKey;
 
+  /// iOS only: also generate an Apple DeviceCheck token
+  /// ([PlatformAttestation.deviceCheckToken]). With it your backend can read
+  /// and set two bits that Apple keeps for this device and that survive a
+  /// reinstall, for example "already claimed the sign-up bonus" or
+  /// "banned". On Android the same kind of memory comes with the Play
+  /// Integrity verdict (device recall) and needs nothing here.
+  final bool deviceCheck;
+
   Map<String, Object?> toMap() => <String, Object?>{
     'cloudProjectNumber': cloudProjectNumber,
     'resetAppAttestKey': resetAppAttestKey,
     'playIntegrity': playIntegrity.name,
+    'deviceCheck': deviceCheck,
   };
 }
 
@@ -83,6 +93,7 @@ class PlatformAttestation {
     this.keyId,
     this.isAssertion = false,
     this.isStandardRequest = false,
+    this.deviceCheckToken,
   });
 
   factory PlatformAttestation.fromMap(Map<Object?, Object?> map) {
@@ -96,6 +107,7 @@ class PlatformAttestation {
       keyId: map['keyId'] as String?,
       isAssertion: map['assertion'] as bool? ?? false,
       isStandardRequest: map['standard'] as bool? ?? false,
+      deviceCheckToken: map['deviceCheckToken'] as String?,
     );
   }
 
@@ -114,16 +126,78 @@ class PlatformAttestation {
   /// binding is in `requestHash` instead of `nonce`.
   final bool isStandardRequest;
 
+  /// Base64 Apple DeviceCheck token, when requested with
+  /// [AttestationOptions.deviceCheck] (iOS). Your backend sends it to Apple
+  /// to read or update this device's two bits.
+  final String? deviceCheckToken;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'type': type.name,
     'token': token,
     if (keyId != null) 'keyId': keyId,
     if (type == AttestationType.appAttest) 'assertion': isAssertion,
     if (type == AttestationType.playIntegrity) 'standard': isStandardRequest,
+    if (deviceCheckToken != null) 'deviceCheckToken': deviceCheckToken,
   };
 
   @override
   String toString() =>
       'PlatformAttestation(${type.name}${isAssertion ? ', assertion' : ''}'
       '${isStandardRequest ? ', standard' : ''})';
+}
+
+/// A Play Integrity remediation dialog: Google Play's own screen that asks the
+/// user to fix what made a verdict fail. Show one with
+/// [FlutterAntiVirtuals.showPlayIntegrityDialog] when your backend reports
+/// that the verdict calls for it.
+enum PlayIntegrityDialog {
+  /// The app was not installed or bought from Google Play
+  /// (`appLicensingVerdict` is `UNLICENSED`).
+  getLicensed(1),
+
+  /// Close unknown apps that could capture the screen or control the device
+  /// (`appAccessRiskVerdict`).
+  closeUnknownAccessRisk(2),
+
+  /// Close all apps, known or unknown, that could capture the screen or
+  /// control the device.
+  closeAllAccessRisk(3),
+
+  /// The device or app failed `MEETS_DEVICE_INTEGRITY` or the app is not
+  /// recognized; Play asks the user to fix it, for example by updating Play
+  /// services.
+  getIntegrity(4),
+
+  /// Like [getIntegrity], for `MEETS_STRONG_INTEGRITY`.
+  getStrongIntegrity(5);
+
+  const PlayIntegrityDialog(this.typeCode);
+
+  /// The `IntegrityDialogTypeCode` value Play expects.
+  final int typeCode;
+}
+
+/// How a [PlayIntegrityDialog] ended.
+enum PlayIntegrityDialogResult {
+  /// Play could not show it: no Play Integrity on this platform, no earlier
+  /// token response in this app session, or Play has no fix to offer.
+  unavailable,
+
+  /// The user went through the dialog. Request a new token and check again:
+  /// it does not mean the problem is gone.
+  successful,
+
+  /// The user closed the dialog.
+  cancelled,
+
+  /// The dialog failed.
+  failed;
+
+  /// Reads the name the native side reports; anything else is [unavailable].
+  static PlayIntegrityDialogResult fromName(Object? name) => switch (name) {
+    'successful' => successful,
+    'cancelled' => cancelled,
+    'failed' => failed,
+    _ => unavailable,
+  };
 }

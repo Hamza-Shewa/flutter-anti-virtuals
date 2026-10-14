@@ -127,6 +127,145 @@ void main() {
     });
   });
 
+  group('screenshots', () {
+    const events = EventChannel('flutter_anti_virtuals/screenshots');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    late MockStreamHandlerEventSink sink;
+    var listens = 0;
+
+    setUp(() {
+      listens = 0;
+      messenger.setMockStreamHandler(
+        events,
+        MockStreamHandler.inline(
+          onListen: (arguments, s) {
+            listens++;
+            sink = s;
+          },
+        ),
+      );
+    });
+
+    tearDown(() => messenger.setMockStreamHandler(events, null));
+
+    test('native screenshot events reach every listener', () async {
+      final platform = MethodChannelFlutterAntiVirtuals();
+      var a = 0;
+      var b = 0;
+      final first = platform.screenshots.listen((_) => a++);
+      final second = platform.screenshots.listen((_) => b++);
+      await Future<void>.delayed(Duration.zero);
+      expect(listens, 1);
+      sink.success('screenshot');
+      await Future<void>.delayed(Duration.zero);
+      expect([a, b], [1, 1]);
+      await first.cancel();
+      await second.cancel();
+    });
+
+    test('they do not mix with environment changes', () async {
+      final platform = MethodChannelFlutterAntiVirtuals();
+      var changes = 0;
+      final listener = platform.environmentChanges.listen((_) => changes++);
+      final screenshots = platform.screenshots.listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      sink.success('screenshot');
+      await Future<void>.delayed(Duration.zero);
+      expect(changes, 0);
+      await listener.cancel();
+      await screenshots.cancel();
+    });
+
+    test('platforms without the event never emit', () async {
+      expect(await _SilentPlatform().screenshots.isEmpty, isTrue);
+    });
+  });
+
+  group('device binding', () {
+    setUp(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            lastCall = call;
+            return true;
+          });
+    });
+
+    test('rebindDevice asks the native side', () async {
+      expect(await FlutterAntiVirtuals.instance.rebindDevice(), isTrue);
+      expect(lastCall?.method, 'rebindDevice');
+    });
+
+    test('platforms without the check report false', () async {
+      expect(await _SilentPlatform().rebindDevice(), isFalse);
+    });
+  });
+
+  group('Play Integrity dialogs', () {
+    String? outcome;
+
+    setUp(() {
+      outcome = 'successful';
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            lastCall = call;
+            return outcome;
+          });
+    });
+
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('send the type code on Android and read the outcome', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final result = await FlutterAntiVirtuals.instance.showPlayIntegrityDialog(
+        PlayIntegrityDialog.closeUnknownAccessRisk,
+      );
+      expect(result, PlayIntegrityDialogResult.successful);
+      expect(lastCall?.method, 'showIntegrityDialog');
+      expect(lastCall?.arguments, {'typeCode': 2});
+    });
+
+    test('map every native outcome', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final platform = MethodChannelFlutterAntiVirtuals();
+      for (final (name, expected) in [
+        ('cancelled', PlayIntegrityDialogResult.cancelled),
+        ('failed', PlayIntegrityDialogResult.failed),
+        ('unavailable', PlayIntegrityDialogResult.unavailable),
+        (null, PlayIntegrityDialogResult.unavailable),
+      ]) {
+        outcome = name;
+        expect(
+          await platform.showPlayIntegrityDialog(
+            PlayIntegrityDialog.getLicensed,
+          ),
+          expected,
+        );
+      }
+    });
+
+    test('are unavailable without a channel call elsewhere', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      expect(
+        await MethodChannelFlutterAntiVirtuals().showPlayIntegrityDialog(
+          PlayIntegrityDialog.getIntegrity,
+        ),
+        PlayIntegrityDialogResult.unavailable,
+      );
+      expect(lastCall, isNull);
+    });
+
+    test('type codes match Play', () {
+      expect(PlayIntegrityDialog.values.map((dialog) => dialog.typeCode), [
+        1,
+        2,
+        3,
+        4,
+        5,
+      ]);
+    });
+  });
+
   group('screen protection', () {
     const channel = MethodChannel('flutter_anti_virtuals');
     final messenger =
@@ -252,6 +391,15 @@ void main() {
         ScanOptions(expectedSignatureSha256: ['aa']).enabledSignals,
         AntiVirtualSignal.values.toSet(),
       );
+    });
+
+    test('expected team IDs turn the signature check on', () {
+      final options = ScanOptions(expectedTeamIds: [' abcde12345 ']);
+      expect(
+        options.enabledSignals,
+        contains(AntiVirtualSignal.signatureMismatch),
+      );
+      expect(options.toMap()['expectedTeamIds'], ['ABCDE12345']);
     });
 
     test('checkSignatureMismatch: true without hashes asserts', () {

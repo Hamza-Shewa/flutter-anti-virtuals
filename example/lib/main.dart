@@ -71,6 +71,7 @@ class _HomePageState extends State<_HomePage> {
   int _changes = 0;
   bool _busy = false;
   StreamSubscription<void>? _changesSub;
+  StreamSubscription<void>? _screenshotsSub;
 
   @override
   void initState() {
@@ -82,11 +83,19 @@ class _HomePageState extends State<_HomePage> {
       setState(() => _changes++);
       _scan();
     }, onError: (Object error) => setState(() => _error = error));
+    // Emits after the user takes a screenshot (Android 14+, iOS).
+    _screenshotsSub = FlutterAntiVirtuals.instance.screenshots.listen((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Screenshot taken')));
+    });
   }
 
   @override
   void dispose() {
     _changesSub?.cancel();
+    _screenshotsSub?.cancel();
     super.dispose();
   }
 

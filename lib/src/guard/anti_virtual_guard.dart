@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform;
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -405,6 +405,8 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     _cancelExit();
     final exitApp = widget.exitApp;
     if (exitApp != null) return exitApp();
+    // A web page cannot close itself; the blocking screen stays.
+    if (kIsWeb) return;
     if (defaultTargetPlatform == TargetPlatform.android && !widget.hardExit) {
       await SystemNavigator.pop();
     } else {

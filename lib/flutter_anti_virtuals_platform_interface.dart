@@ -60,4 +60,19 @@ abstract class FlutterAntiVirtualsPlatform extends PlatformInterface {
   /// Emits whenever the network setup changes in a way that can turn a VPN or
   /// proxy on or off. Platforms without live monitoring never emit.
   Stream<void> get environmentChanges => const Stream<void>.empty();
+
+  /// Emits after the user takes a screenshot. Platforms that cannot tell never
+  /// emit.
+  Stream<void> get screenshots => const Stream<void>.empty();
+
+  /// Ties the app's data to this device again, so `appDataMigrated` reads
+  /// clean until the data moves again. Returns false where there is no such
+  /// check.
+  Future<bool> rebindDevice() async => false;
+
+  /// Shows a Play Integrity remediation dialog for the most recent token
+  /// response of this app session (Android).
+  Future<PlayIntegrityDialogResult> showPlayIntegrityDialog(
+    PlayIntegrityDialog dialog,
+  ) async => PlayIntegrityDialogResult.unavailable;
 }

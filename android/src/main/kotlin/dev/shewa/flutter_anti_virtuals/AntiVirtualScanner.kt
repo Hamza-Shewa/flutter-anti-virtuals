@@ -3,7 +3,9 @@ package dev.shewa.flutter_anti_virtuals
 import android.Manifest
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.annotation.SuppressLint
+import android.app.ActivityManager
 import android.app.AppOpsManager
+import android.app.KeyguardManager
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
@@ -15,6 +17,7 @@ import android.hardware.camera2.CameraManager
 import android.hardware.display.DisplayManager
 import android.location.Location
 import android.location.LocationManager
+import android.media.AudioManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
@@ -74,7 +77,11 @@ internal class AntiVirtualScanner(private val context: Context) {
             "rooted" to ::rooted,
             "hooked" to ::hooked,
             "debugger" to ::debugger,
-            "screenCapture" to ::screenCapture
+            "screenCapture" to ::screenCapture,
+            "automation" to ::automation,
+            "activeCall" to ::activeCall,
+            "noScreenLock" to ::noScreenLock,
+            "appDataMigrated" to { DeviceBinding(context).check() }
         )
         return checks
             .filterKeys { config.signals == null || it in config.signals }
@@ -366,6 +373,37 @@ internal class AntiVirtualScanner(private val context: Context) {
                 ?.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)?.map { it.name }.orEmpty()
         } catch (_: Throwable) { emptyList() }
         return Detection.of(CaptureRules.details(displays, ScreenCaptureState.recording))
+    }
+
+    // ---- automation and fraud context ------------------------------------
+
+    private fun automation(): Detection {
+        val details = mutableListOf<String>()
+        if (ActivityManager.isUserAMonkey()) details += "monkey UI exerciser running"
+        if (Build.VERSION.SDK_INT >= 29 && ActivityManager.isRunningInUserTestHarness()) {
+            details += "device in test harness mode"
+        }
+        // UiAutomation (UI Automator, Appium, Espresso device tests) turns accessibility on
+        // without being one of the enabled accessibility services.
+        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+        if (am != null && am.isEnabled &&
+            am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK).isEmpty()
+        ) {
+            details += "UI automation connected"
+        }
+        return Detection.of(details, installed(KnownPackages.automation).map { "automation tool $it" })
+    }
+
+    private fun activeCall(): Detection {
+        val audio = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            ?: return Detection.unsupported
+        return Detection.of(FraudRules.callDetails(audio.mode))
+    }
+
+    private fun noScreenLock(): Detection {
+        val keyguard = context.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+            ?: return Detection.unsupported
+        return Detection.of(FraudRules.screenLockDetails(keyguard.isDeviceSecure))
     }
 
     // ---- hooks and debugger ----------------------------------------------
