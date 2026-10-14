@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'flutter_anti_virtuals'
-  s.version          = '0.2.0'
+  s.version          = '0.2.1'
   s.summary          = "Detects VPNs, proxies, mock location, virtual cameras and tampered environments."
   s.description      = <<-DESC
 Integrity signal scanner for Flutter apps.

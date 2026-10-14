@@ -5,8 +5,9 @@ jailbroken devices, hooking tools and other tampered environments in Flutter
 apps. Every finding comes with the evidence behind it, and a signed version of
 the report lets your server make the final decision.
 
-Android and iOS run the checks. Web, macOS, Windows and Linux build and run
-too, with every check reported as unsupported.
+Android and iOS run the checks. macOS, Windows, Linux and the web build and
+run the same code, with every check reported as unsupported. See
+[Platform support](#platform-support).
 
 ```dart
 final report = await FlutterAntiVirtuals.instance.scan();
@@ -18,6 +19,7 @@ if (report.hasAny({AntiVirtualSignal.vpn, AntiVirtualSignal.mockLocation})) {
 
 ## Contents
 
+- [Platform support](#platform-support)
 - [Installation](#installation)
 - [Scanning the device](#scanning-the-device)
 - [Blocking the app with AntiVirtualGuard](#blocking-the-app-with-antivirtualguard)
@@ -30,6 +32,30 @@ if (report.hasAny({AntiVirtualSignal.vpn, AntiVirtualSignal.mockLocation})) {
 The [`example/`](example/) app has a runnable file for each way of using the
 plugin: `scan_example.dart`, `guard_example.dart`, `monitor_example.dart`, and
 `main.dart`, which shows everything at once.
+
+## Platform support
+
+| Feature | Android | iOS | macOS, Windows, Linux, web |
+| --- | --- | --- | --- |
+| [Signals](#signals) checked by `scan()` and `check()` | 18 of 19 | 11 of 19 | None, every signal is unsupported |
+| `AntiVirtualGuard` and `AntiVirtualMonitor` | Yes | Yes | Run, and always let the app through |
+| Live change events (`environmentChanges`), which trigger a rescan | Yes | Yes | No, the stream never emits |
+| [Screen protection](#protecting-the-screen) | `FLAG_SECURE`, touch filtering, overlay hiding on Android 12+ | Blur while recorded, mirrored or in the app switcher | No, the calls do nothing |
+| [`verify()`](#verifying-on-your-server) signed report | Hardware key with key attestation (StrongBox or TEE) | Secure Enclave key, no attestation | Throws `UnsupportedError` |
+| Platform attestation | Play Integrity, classic and standard | App Attest, not on the Simulator | Throws `UnsupportedError` |
+| `forceExit` | `SystemNavigator.pop()`, or `exit(0)` with `hardExit` | `exit(0)` | Never triggers, since nothing blocks |
+| Minimum version | Android 7.0 (API 24) | iOS 15 | Flutter's own minimums |
+
+Android leaves out `sideloaded`, which only applies to iOS. iOS leaves out the
+eight Android-only checks: `developerOptions`, `adb`, `untrustedInstaller`,
+`signatureMismatch`, `accessibilityAbuse`, `remoteControlApp`, `clonedApp` and
+`userCertificates`. On iOS, `virtualCamera` needs iOS 17 and `clockTampering`
+needs a `trustedTime`.
+
+macOS, Windows, Linux and the web have no native checks yet. The plugin
+registers on them so that one codebase runs everywhere without catching
+`MissingPluginException`, and an unsupported result never counts as detected or
+failed.
 
 ## Installation
 
@@ -402,6 +428,9 @@ if (result is Rejected) return forbidden();
 It does not verify App Attest objects.
 
 ## Signals
+
+The table covers Android and iOS. macOS, Windows, Linux and the web report
+every signal as unsupported.
 
 | Signal | Android | iOS | How it is detected |
 | --- | --- | --- | --- |

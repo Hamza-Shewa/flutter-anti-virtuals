@@ -1,3 +1,8 @@
+## 0.2.1
+
+* README: a platform support table that covers macOS, Windows, Linux and the
+  web next to Android and iOS, and lists which signals each platform checks.
+
 ## 0.2.0
 
 * `AntiVirtualMonitor` runs the guard's scans and blocking decision without a
