@@ -28,7 +28,7 @@ void integrationTest(
   WidgetTesterCallback body, {
   bool skip = false,
 }) {
-  integrationTest(description, (tester) async {
+  testWidgets(description, (tester) async {
     debugPrint('integration test: $description');
     await body(tester);
   }, skip: skip);
