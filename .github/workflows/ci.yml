@@ -80,3 +80,13 @@ jobs:
       - name: Build the example app for the Simulator
         working-directory: flutter_anti_virtuals/example
         run: flutter build ios --simulator --debug
+      - name: Swift unit tests (Simulator)
+        working-directory: flutter_anti_virtuals/example/ios
+        run: |
+          device=$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          devices = json.load(sys.stdin)['devices']
+          print(next(d['udid'] for runtime, list_ in devices.items() if 'iOS' in runtime
+                     for d in list_ if d['name'].startswith('iPhone')))")
+          xcodebuild test -workspace Runner.xcworkspace -scheme Runner \
+            -destination "id=$device" -quiet
