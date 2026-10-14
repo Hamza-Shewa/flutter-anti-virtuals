@@ -3,11 +3,12 @@ import 'dart:io' show exit;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, setEquals;
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../flutter_anti_virtuals_platform_interface.dart';
+import '../monitor/anti_virtual_monitor.dart';
+import '../monitor/guard_state.dart';
 import '../report.dart';
 import '../scan_options.dart';
 import '../screen_protection.dart';
@@ -70,31 +71,29 @@ class AntiVirtualGuard extends StatefulWidget {
     this.failClosed = false,
     this.blockOnInstalledApps = false,
     this.unmountWhileBlocked = true,
+    this.showRetry = true,
     this.onReport,
     this.onError,
     @visibleForTesting this.exitApp,
   });
 
-  /// Signals that block the app unless [blockOn] says otherwise. These are the
-  /// clear integrity violations; softer signals such as developer options or
-  /// an untrusted installer (which also fires for adb installs) are reported
-  /// through [onReport] but do not block by default. So is
-  /// [AntiVirtualSignal.emulator], which would block your own emulator during
-  /// development; add it in release builds (`if (kReleaseMode)`).
-  /// [AntiVirtualSignal.rooted] is left out too, because blocking every rooted
-  /// or jailbroken device locks out legitimate users in some markets; add it
-  /// when your app needs to refuse them. [AntiVirtualSignal.hooked] and
-  /// [AntiVirtualSignal.debugger] are left out as well: a debug build run from
-  /// your IDE has a debugger attached, and a hook is a strong signal that you
-  /// may prefer to send to your server instead of blocking on the device.
+  /// Signals that block the app unless [blockOn] says otherwise, see
+  /// [AntiVirtualMonitor.defaultBlockingSignals]. Add
+  /// [AntiVirtualSignal.emulator] in release builds (`if (kReleaseMode)`), and
+  /// [AntiVirtualSignal.rooted], [AntiVirtualSignal.hooked] or
+  /// [AntiVirtualSignal.debugger] when your app needs to refuse them.
   static const Set<AntiVirtualSignal> defaultBlockingSignals =
-      <AntiVirtualSignal>{
-        AntiVirtualSignal.vpn,
-        AntiVirtualSignal.proxy,
-        AntiVirtualSignal.mockLocation,
-        AntiVirtualSignal.virtualCamera,
-        AntiVirtualSignal.signatureMismatch,
-      };
+      AntiVirtualMonitor.defaultBlockingSignals;
+
+  /// The monitor of the nearest guard above [context], for example to read
+  /// its [AntiVirtualMonitor.value] or listen to its reports.
+  static AntiVirtualMonitor? monitorOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<_GuardScope>()?.monitor;
+
+  /// Scans again from inside the guard, for example from a "Try again"
+  /// button in a custom [blockedBuilder].
+  static Future<void> rescan(BuildContext context) =>
+      monitorOf(context)?.rescan() ?? Future<void>.value();
 
   /// The app to protect.
   final Widget child;
@@ -201,6 +200,12 @@ class AntiVirtualGuard extends StatefulWidget {
   /// mounted and preserve its state.
   final bool unmountWhileBlocked;
 
+  /// Show a "Try again" button on the built-in blocking screen. It scans
+  /// again right away, so a user who switched the VPN off does not have to
+  /// leave the app. A custom [blockedBuilder] can do the same with
+  /// [AntiVirtualGuard.rescan].
+  final bool showRetry;
+
   /// Called with every completed scan, blocking or not. Exceptions thrown here
   /// are reported through `FlutterError.reportError` and never unblock.
   final ValueChanged<AntiVirtualReport>? onReport;
@@ -218,73 +223,69 @@ class AntiVirtualGuard extends StatefulWidget {
 
 class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     with WidgetsBindingObserver {
-  AntiVirtualReport? _report;
-  bool _scanned = false;
-  bool _failed = false;
+  late final AntiVirtualMonitor _monitor = AntiVirtualMonitor(
+    options: widget.options,
+    blockOn: widget.blockOn,
+    failClosed: widget.failClosed,
+    blockOnInstalledApps: widget.blockOnInstalledApps,
+    rescanInterval: widget.rescanInterval,
+    liveMonitoring: widget.liveMonitoring,
+    rescanOnResume: widget.rescanOnResume,
+    rescanDebounce: widget.rescanDebounce,
+    liveDebounce: widget.liveDebounce,
+    onReport: widget.onReport,
+    onError: widget.onError,
+  );
+
   // Sticky: once the app has been allowed into the tree it stays mounted
   // while blocked only when [unmountWhileBlocked] is false.
   bool _childAllowed = false;
-  bool _inFlight = false;
-  bool _rescanQueued = false;
-  bool _wasBackgrounded = false;
-  bool _foreground = true;
-  DateTime? _lastScanAt;
-  List<AntiVirtualSignal> _matches = const <AntiVirtualSignal>[];
-  // A check of a blocking signal failed in the last report.
-  bool _blockingCheckFailed = false;
   Timer? _exitTimer;
   Timer? _tickTimer;
-  Timer? _intervalTimer;
-  Timer? _liveTimer;
-  Timer? _liveMaxTimer;
-  Timer? _liveRetryTimer;
-  StreamSubscription<void>? _liveSubscription;
-  // A network change that arrived while the app was in the background: scanned
-  // on resume whatever [AntiVirtualGuard.rescanOnResume] says.
-  bool _liveChangePending = false;
   int _remaining = 0;
 
-  late ScanOptions _options = widget.options ?? ScanOptions();
-
-  bool get _blocked =>
-      _matches.isNotEmpty ||
-      (widget.failClosed && (_failed || _blockingCheckFailed));
+  GuardState get _state => _monitor.value;
+  bool get _blocked => _state is GuardBlocked;
+  List<AntiVirtualSignal> get _matches => switch (_state) {
+    GuardBlocked(:final matches) => matches,
+    _ => const <AntiVirtualSignal>[],
+  };
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _childAllowed = !widget.waitForScan;
-    _syncInterval();
-    _syncLive();
+    _monitor.addListener(_onMonitorChanged);
     if (widget.protectScreen != null) _syncProtection();
-    _scan();
+    _monitor.start();
   }
 
   @override
   void didUpdateWidget(AntiVirtualGuard old) {
     super.didUpdateWidget(old);
-    var changedOptions = false;
-    if (old.options != widget.options) {
-      // Compared by value, so an inline `ScanOptions(...)` does not rescan on
-      // every parent rebuild.
-      _options = widget.options ?? ScanOptions();
-      changedOptions = true;
-    }
     if (old.waitForScan && !widget.waitForScan) _childAllowed = true;
-    if (old.rescanInterval != widget.rescanInterval) _syncInterval();
-    if (old.liveMonitoring != widget.liveMonitoring) _syncLive();
+    _monitor
+      ..onReport = widget.onReport
+      ..onError = widget.onError
+      ..rescanOnResume = widget.rescanOnResume
+      ..rescanDebounce = widget.rescanDebounce
+      ..liveDebounce = widget.liveDebounce
+      ..rescanInterval = widget.rescanInterval
+      ..liveMonitoring = widget.liveMonitoring;
     if (old.protectScreen != widget.protectScreen &&
         (old.protectScreen != null || widget.protectScreen != null)) {
       _syncProtection();
     }
-    if (changedOptions) {
-      _scan();
-    } else if (!setEquals(old.blockOn, widget.blockOn) ||
-        old.failClosed != widget.failClosed ||
-        old.blockOnInstalledApps != widget.blockOnInstalledApps) {
-      _apply();
+    if (old.options != widget.options) {
+      // Compared by value, so an inline `ScanOptions(...)` does not rescan on
+      // every parent rebuild.
+      _monitor.options = widget.options ?? ScanOptions();
     }
+    _monitor
+      ..blockOn = widget.blockOn
+      ..failClosed = widget.failClosed
+      ..blockOnInstalledApps = widget.blockOnInstalledApps;
     if (old.forceExit != widget.forceExit ||
         old.forceExitAfter != widget.forceExitAfter) {
       _cancelExit();
@@ -296,10 +297,9 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _cancelExit();
-    _intervalTimer?.cancel();
-    _cancelLiveTimers();
-    _liveRetryTimer?.cancel();
-    _liveSubscription?.cancel();
+    _monitor
+      ..removeListener(_onMonitorChanged)
+      ..dispose();
     if (widget.protectScreen != null) {
       unawaited(
         ScreenProtectionCoordinator.instance
@@ -315,55 +315,15 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     if (mounted) setState(() {});
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    switch (state) {
-      case AppLifecycleState.paused:
-      case AppLifecycleState.hidden:
-      case AppLifecycleState.detached:
-        // The user left (maybe to fix the problem in Settings): stop the
-        // countdown; it restarts when the app returns and still finds a match.
-        _foreground = false;
-        _wasBackgrounded = true;
-        _cancelExit();
-      case AppLifecycleState.resumed:
-        _foreground = true;
-        final stale =
-            _lastScanAt == null ||
-            DateTime.now().difference(_lastScanAt!) >= widget.rescanDebounce;
-        final changed = _liveChangePending;
-        _liveChangePending = false;
-        if (changed || (widget.rescanOnResume && (_wasBackgrounded || stale))) {
-          _scan();
-        } else {
-          // No rescan to restart the countdown for us.
-          _syncExit();
-        }
-        _wasBackgrounded = false;
-      case AppLifecycleState.inactive:
-        break;
-    }
-  }
-
-  void _syncInterval() {
-    _intervalTimer?.cancel();
-    _intervalTimer = null;
-    final interval = widget.rescanInterval;
-    if (interval == null) return;
-    _intervalTimer = Timer.periodic(interval, (_) {
-      if (_foreground) _scan();
+  void _onMonitorChanged() {
+    if (!mounted) return;
+    setState(() {
+      if (_state is! GuardScanning && (!_blocked || !widget.waitForScan)) {
+        _childAllowed = true;
+      }
     });
-  }
-
-  void _syncLive() {
-    _cancelLiveTimers();
-    _liveRetryTimer?.cancel();
-    _liveRetryTimer = null;
-    _liveSubscription?.cancel();
-    _liveSubscription = null;
-    if (!widget.liveMonitoring) return;
-    _liveSubscription = FlutterAntiVirtualsPlatform.instance.environmentChanges
-        .listen(_onNetworkChange, onError: _onLiveError);
+    if (_blocked) _dropFocus();
+    _syncExit();
   }
 
   void _syncProtection() {
@@ -377,107 +337,6 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
           },
         );
   }
-
-  void _cancelLiveTimers() {
-    _liveTimer?.cancel();
-    _liveTimer = null;
-    _liveMaxTimer?.cancel();
-    _liveMaxTimer = null;
-  }
-
-  void _onNetworkChange(void _) {
-    if (!_foreground) {
-      _liveChangePending = true; // Scanned on resume.
-      return;
-    }
-    // Wait for a burst to settle, but never longer than a few debounce periods
-    // after its first event, so a flapping network cannot postpone the scan.
-    _liveTimer?.cancel();
-    _liveTimer = Timer(widget.liveDebounce, _liveScan);
-    _liveMaxTimer ??= Timer(widget.liveDebounce * 4, _liveScan);
-  }
-
-  void _liveScan() {
-    _cancelLiveTimers();
-    if (!mounted) return;
-    if (_foreground) {
-      _scan();
-    } else {
-      _liveChangePending = true;
-    }
-  }
-
-  // Live monitoring is best effort: the other rescans still run. A native side
-  // that could not start watching (for example a callback limit) is retried
-  // later instead of staying off for the life of the widget.
-  void _onLiveError(Object error, StackTrace stackTrace) {
-    _reportError(error, stackTrace, 'while monitoring network changes');
-    _liveRetryTimer?.cancel();
-    _liveRetryTimer = Timer(const Duration(seconds: 30), _syncLive);
-  }
-
-  Future<void> _scan() async {
-    if (_inFlight) {
-      // Keep the running scan (its result is still applied); refresh after.
-      _rescanQueued = true;
-      return;
-    }
-    _inFlight = true;
-    AntiVirtualReport? report;
-    Object? failure;
-    StackTrace? failureTrace;
-    try {
-      report = await FlutterAntiVirtualsPlatform.instance.scan(_options);
-    } catch (error, stackTrace) {
-      failure = error;
-      failureTrace = stackTrace;
-    }
-    _inFlight = false;
-    if (!mounted) return;
-    _lastScanAt = DateTime.now();
-    if (report != null) {
-      _failed = false;
-      _report = report;
-      _apply();
-      _guard(() => widget.onReport?.call(report!));
-    } else {
-      // A failed first scan fails open (unless [failClosed]); a failed rescan
-      // keeps the last known result instead of discarding a known-bad one.
-      _failed = true;
-      _apply();
-      _reportError(failure!, failureTrace!);
-    }
-    if (_rescanQueued) {
-      _rescanQueued = false;
-      unawaited(_scan());
-    }
-  }
-
-  /// Recomputes what blocks from the last report.
-  void _apply() {
-    if (!mounted) return;
-    final report = _report;
-    setState(() {
-      _scanned = true;
-      _matches = report == null
-          ? const <AntiVirtualSignal>[]
-          : <AntiVirtualSignal>[
-              for (final signal in AntiVirtualSignal.values)
-                if (widget.blockOn.contains(signal) && _blocks(report[signal]))
-                  signal,
-            ];
-      _blockingCheckFailed =
-          report != null && widget.blockOn.any(report.isFailed);
-      if (!_blocked || !widget.waitForScan) _childAllowed = true;
-    });
-    if (_blocked) _dropFocus();
-    _syncExit();
-  }
-
-  bool _blocks(SignalResult? result) =>
-      result != null &&
-      result.detected &&
-      (widget.blockOnInstalledApps || !result.onlyInstalledApps);
 
   void _reportError(
     Object error,
@@ -496,18 +355,14 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
       );
       return;
     }
-    _guard(() => onError(error, stackTrace));
-  }
-
-  // A callback that throws must not turn a blocked device into an open one.
-  void _guard(void Function() callback) {
     try {
-      callback();
-    } catch (error, stackTrace) {
+      onError(error, stackTrace);
+    } catch (callbackError, callbackTrace) {
+      // A callback that throws must not turn a blocked device into an open one.
       FlutterError.reportError(
         FlutterErrorDetails(
-          exception: error,
-          stack: stackTrace,
+          exception: callbackError,
+          stack: callbackTrace,
           library: 'flutter_anti_virtuals',
           context: ErrorDescription(
             'while calling an AntiVirtualGuard callback',
@@ -520,11 +375,14 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
   void _dropFocus() => FocusManager.instance.primaryFocus?.unfocus();
 
   void _syncExit() {
-    if (!_blocked || !widget.forceExit || !_foreground) {
+    if (!_blocked || !widget.forceExit || !_monitor.isForeground) {
       _cancelExit();
       return;
     }
     if (_exitTimer != null) return; // Already counting down.
+    // A rescan is running (for example after a trip to Settings): wait for
+    // its result before counting down again.
+    if (_monitor.isScanning) return;
     _remaining = math.max(
       1,
       (widget.forceExitAfter.inMilliseconds / 1000).ceil(),
@@ -571,47 +429,66 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
   @override
   Widget build(BuildContext context) {
     final blocked = _blocked;
-    final loading = !_scanned && widget.waitForScan;
+    final loading = _state is GuardScanning && widget.waitForScan;
     final Widget? cover = loading
         ? (widget.loadingBuilder?.call(context) ?? const _DefaultLoading())
         : blocked
-        ? (widget.blockedBuilder?.call(context, _matches) ??
-              _DefaultBlockedScreen(
-                matches: _matches,
-                messages:
-                    widget.messages ??
-                    AntiVirtualMessages.forLocale(_resolveLocale()),
-                remainingSeconds: widget.forceExit ? _remaining : null,
-              ))
+        ? Builder(
+            // A context below the scope, so the builder can call
+            // [AntiVirtualGuard.rescan].
+            builder: (context) =>
+                widget.blockedBuilder?.call(context, _matches) ??
+                _DefaultBlockedScreen(
+                  matches: _matches,
+                  messages:
+                      widget.messages ??
+                      AntiVirtualMessages.forLocale(_resolveLocale()),
+                  remainingSeconds: widget.forceExit ? _remaining : null,
+                  onRetry: widget.showRetry ? _monitor.rescan : null,
+                  retrying: _monitor.isScanning,
+                ),
+          )
         : null;
     final showChild =
         _childAllowed && !(cover != null && widget.unmountWhileBlocked);
-    return Stack(
-      textDirection: Directionality.maybeOf(context) ?? TextDirection.ltr,
-      children: <Widget>[
-        // Not built before the first clean scan. Afterwards it stays mounted so
-        // state survives, but while covered it is hidden, unfocusable, cannot be
-        // hit and its tickers (animations) are paused.
-        if (showChild)
-          Positioned.fill(
-            child: Offstage(
-              offstage: cover != null,
-              child: TickerMode(
-                enabled: cover == null,
-                child: ExcludeFocus(
-                  excluding: cover != null,
-                  child: IgnorePointer(
-                    ignoring: cover != null,
-                    child: widget.child,
+    return _GuardScope(
+      monitor: _monitor,
+      child: Stack(
+        textDirection: Directionality.maybeOf(context) ?? TextDirection.ltr,
+        children: <Widget>[
+          // Not built before the first clean scan. Afterwards it stays mounted
+          // so state survives, but while covered it is hidden, unfocusable,
+          // cannot be hit and its tickers (animations) are paused.
+          if (showChild)
+            Positioned.fill(
+              child: Offstage(
+                offstage: cover != null,
+                child: TickerMode(
+                  enabled: cover == null,
+                  child: ExcludeFocus(
+                    excluding: cover != null,
+                    child: IgnorePointer(
+                      ignoring: cover != null,
+                      child: widget.child,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        if (cover != null) Positioned.fill(child: cover),
-      ],
+          if (cover != null) Positioned.fill(child: cover),
+        ],
+      ),
     );
   }
+}
+
+class _GuardScope extends InheritedWidget {
+  const _GuardScope({required this.monitor, required super.child});
+
+  final AntiVirtualMonitor monitor;
+
+  @override
+  bool updateShouldNotify(_GuardScope old) => old.monitor != monitor;
 }
 
 class _DefaultLoading extends StatelessWidget {
@@ -629,11 +506,15 @@ class _DefaultBlockedScreen extends StatelessWidget {
     required this.matches,
     required this.messages,
     required this.remainingSeconds,
+    this.onRetry,
+    this.retrying = false,
   });
 
   final List<AntiVirtualSignal> matches;
   final AntiVirtualMessages messages;
   final int? remainingSeconds;
+  final VoidCallback? onRetry;
+  final bool retrying;
 
   @override
   Widget build(BuildContext context) {
@@ -685,6 +566,29 @@ class _DefaultBlockedScreen extends StatelessWidget {
                             ],
                           ),
                         ),
+                    if (onRetry != null) ...<Widget>[
+                      const SizedBox(height: 16),
+                      Center(
+                        child: OutlinedButton.icon(
+                          onPressed: retrying ? null : onRetry,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: white,
+                            disabledForegroundColor: const Color(0x99FFFFFF),
+                            side: const BorderSide(color: Color(0x99FFFFFF)),
+                          ),
+                          icon: retrying
+                              ? const SizedBox.square(
+                                  dimension: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: white,
+                                  ),
+                                )
+                              : const Icon(Icons.refresh),
+                          label: Text(text.retry),
+                        ),
+                      ),
+                    ],
                     if (remainingSeconds != null) ...<Widget>[
                       const SizedBox(height: 16),
                       Text(

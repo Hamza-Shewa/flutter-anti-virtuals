@@ -12,6 +12,8 @@ import 'src/signal.dart';
 
 export 'src/guard/anti_virtual_guard.dart';
 export 'src/guard/messages.dart';
+export 'src/monitor/anti_virtual_monitor.dart';
+export 'src/monitor/guard_state.dart';
 export 'src/attestation.dart';
 export 'src/report.dart';
 export 'src/scan_options.dart';
