@@ -71,7 +71,10 @@ final json = report.toJson(); // send it to your server
 ```
 
 A signal whose `supported` is false (for example `adb` on iOS) was not checked
-and is never counted as detected. Do not trust a client-side report for
+and is never counted as detected. A check that should have run but threw, or
+that the native side left out, is `failed` (`report.failed`, `result.error`):
+its state is unknown, not clean, and `report.isClean` is false while any check
+failed. Do not trust a client-side report for
 anything that matters: use `verify()` below and check it on your server.
 
 ## Block the app at startup
@@ -102,7 +105,8 @@ MaterialApp(
 | `liveMonitoring` | `true` | Scan as soon as the network changes, so a VPN or proxy switched on while the app is in front is caught right away. Android listens to `ConnectivityManager` for VPN transport and per-network proxy changes and to the system's proxy-change broadcast for a proxy set globally, iOS to `NWPathMonitor` (every path update counts). A failing watcher is reported through `onError` and retried after 30 seconds. A change while the app is in the background is scanned on resume, even with `rescanOnResume: false`. Mock location and cameras have no change notification, so they wait for the next rescan. iOS does not report a changed proxy setting live |
 | `liveDebounce` | 500 ms | Wait after a change before scanning, so a burst of changes (a VPN coming up) causes one scan |
 | `rescanInterval` | `null` | Also scan this often while in the foreground |
-| `failClosed` | `false` | Block when a scan fails. The built-in screen then says the device could not be verified and `blockedBuilder` gets an empty list. Without it a failing first scan lets the app through and a failed rescan keeps the previous result, so backgrounding the app cannot be used to clear a block |
+| `failClosed` | `false` | Block when a scan fails, or when the check of a signal in `blockOn` fails. The built-in screen then says the device could not be verified and `blockedBuilder` gets an empty list. Without it a failing first scan lets the app through, a failed rescan keeps the previous result (so backgrounding the app cannot be used to clear a block) and a failed check does not block |
+| `blockOnInstalledApps` | `false` | Also block when the only evidence is an installed tool (a fake-GPS or virtual-camera app that is not in use, `result.onlyInstalledApps`). Such detections still reach `onReport` |
 | `unmountWhileBlocked` | `true` | Remove the app from the tree while blocked, so the Android back button and deep links cannot reach it (a widget above the `Navigator` cannot intercept them). Its state is lost and it is rebuilt when the block clears. Pass `false` to keep it mounted and hidden instead |
 | `hardExit` | `false` | Android: end the process with `exit(0)` instead of `SystemNavigator.pop()` |
 | `onReport`, `onError` | none | Every completed scan; scan failures (reported through `FlutterError.reportError` when `onError` is not set) |
@@ -153,6 +157,12 @@ It also stops your own users from taking screenshots, so it is off by default.
 The plugin declares the `HIDE_OVERLAY_WINDOWS` and `DETECT_SCREEN_RECORDING`
 permissions; both are normal permissions granted at install.
 
+Requests are combined: the window stays protected while any guard with
+`protectScreen` or a `protectScreen()` call still asks for it, and
+`unprotectScreen()` only withdraws its own request. On Android the plugin only
+clears window flags it set itself, so a `FLAG_SECURE` your app sets on its own
+window is kept.
+
 ## Verify before a sensitive action
 
 A client-side scan can be faked by whoever controls the device. `verify()` runs
@@ -196,8 +206,8 @@ also compare the clock.
 | --- | --- | --- | --- |
 | `vpn` | yes | yes | VPN transport, `tun`/`ppp`/`tap`/`wg` interfaces (iOS: `utun`/`ipsec`/`tap`/`tun`/`ppp` entries in the scoped network settings, which system tunnels such as Private Relay and Wi-Fi Calling do not appear in) |
 | `proxy` | yes | yes | Per-network proxy, PAC file, JVM proxy properties |
-| `mockLocation` | yes | iOS 15+ | `Location.isMock` of a fix from the last 2 minutes (needs granted location permission and the app in the foreground), known mock apps; iOS `isSimulatedBySoftware` |
-| `virtualCamera` | partial | iOS 17+ | Known virtual-camera apps, external cameras |
+| `mockLocation` | yes | iOS 15+ | `Location.isMock` of a fix from the last 2 minutes (needs granted location permission and the app in the foreground), known mock apps (reported in `installedApps`); iOS `isSimulatedBySoftware` |
+| `virtualCamera` | partial | iOS 17+ | External cameras, known virtual-camera apps (reported in `installedApps`) |
 | `emulator` | yes | yes | Android: any one strong indicator (`ro.kernel.qemu`/`ro.boot.qemu`, goldfish/ranchu/vbox86 hardware, qemu and vendor files, Genymotion, BlueStacks, Nox, LDPlayer, MEmu builds or apps, Goldfish sensors) or two weak ones (generic fingerprint, SDK model or product, no sensors, operator "Android", ...), so real devices are not reported. iOS: Simulator build, `SIMULATOR_*` environment, host CPU as hardware model |
 | `rooted` | yes | yes | Android root, iOS jailbreak. Android: any one strong indicator (`su`, `magisk` or `daemonsu` in `PATH` and the usual directories, a root manager or root-hiding app such as Magisk, KernelSU, APatch, SuperSU, RootCloak, root tool files, a writable `/system`, `/vendor` or `/product`, `adbd` as root, `ro.secure=0`, permissive SELinux, Magisk/KernelSU/APatch mounts) or two weak ones (a debug build of the system and an unlocked bootloader). iOS: Cydia, Sileo, Zebra, Filza and other jailbreak files (rootless `/var/jb` and `/var/binpack` too), a successful write outside the sandbox, injected tweak libraries (Substrate, Substitute, libhooker, ElleKit) and `DYLD_INSERT_LIBRARIES`. The iOS Simulator is reported by `emulator`, not here |
 | `hooked` | yes | yes | Instrumentation in the app process. Android: Frida, Xposed, LSPosed, EdXposed, Substrate or Riru/Zygisk libraries in `/proc/self/maps`, Frida threads, `XposedBridge` classes, hooking managers and files, framework frames in the plugin's own call stack (a hooked method), Frida's default server port. iOS: injected Frida, Substrate, Substitute, libhooker and ElleKit libraries, hooking classes, `DYLD_INSERT_LIBRARIES`, the Frida port |
@@ -206,7 +216,7 @@ also compare the clock.
 | `developerOptions` | yes | no | `DEVELOPMENT_SETTINGS_ENABLED` |
 | `adb` | yes | no | USB and wireless debugging |
 | `clockTampering` | yes | needs `trustedTime` | Auto time/zone off, skew against server time |
-| `untrustedInstaller` | yes | no | Installer not in `trustedInstallers` (Play, Galaxy Store, AppGallery, Amazon, GetApps by default). Builds installed with adb report no installer, including debug builds |
+| `untrustedInstaller` | yes | no | Installer not in `trustedInstallers` (Play, Galaxy Store, AppGallery, Amazon, GetApps by default). On Android 11+ an install started from the shell that claims an installer (`adb install -i com.android.vending`) is reported too. Builds installed with adb report no installer, including debug builds |
 | `signatureMismatch` | yes | no | Signing cert SHA-256 vs `expectedSignatureSha256` |
 | `accessibilityAbuse` | yes | no | Non-system services that can read window content |
 | `remoteControlApp` | yes | no | AnyDesk, TeamViewer, RustDesk, ... installed |

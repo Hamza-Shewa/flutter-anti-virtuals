@@ -20,7 +20,7 @@ await api.transfer(amount, attestation: signed.toJson());
 
 | Field | Meaning |
 | --- | --- |
-| `payload` | The exact text that was signed: `{"v":1,"nonce":…,"issuedAt":<ms>,"platform":"android"\|"iOS","signals":{"vpn":{"detected":false,"supported":true},…}}`. Do not re-encode it. |
+| `payload` | The exact text that was signed: `{"v":1,"nonce":…,"issuedAt":<ms>,"platform":"android"\|"iOS","signals":{"vpn":{"detected":false,"supported":true},…}}`. A check that failed on the device also carries `"failed":true`; treat it as unknown, not clean. Do not re-encode it. |
 | `signature` | Base64 `SHA256withECDSA` signature (DER) over the UTF-8 bytes of `payload`. |
 | `publicKey` | Base64 public key. Android: X.509 SubjectPublicKeyInfo. iOS: ANSI X9.63 uncompressed point. |
 | `protection` | `strongBox`, `hardware` or `software`. Treat `software` as no device binding. |

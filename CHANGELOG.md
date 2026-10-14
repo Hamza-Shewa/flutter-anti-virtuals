@@ -1,3 +1,36 @@
+## Unreleased
+
+* **Failed checks are no longer clean.** A native check that throws, a signal
+  the native side leaves out and a `null` scan reply used to read as "not
+  detected". Now a failed check is `SignalResult.failed` (with `error`),
+  `report.failed` lists them, `report.isClean` is false while any check failed,
+  a `null` reply throws `PlatformException(no_result)`, and the signed payload
+  marks it with `"failed": true`. `AntiVirtualGuard(failClosed: true)` blocks
+  when the check of a blocking signal fails.
+* Fix: `untrustedInstaller` could be spoofed with `adb install -i
+  com.android.vending`. On Android 11+ an install whose initiating package
+  (which the caller cannot choose) is the shell is reported even when the
+  claimed installer is trusted.
+* Fix: screen protection no longer clears window flags the app set itself
+  (Android only undoes what the plugin set), and requests from several guards
+  and `protectScreen()` are combined instead of switching each other off.
+* `mockLocation` and `virtualCamera` report installed tools separately
+  (`SignalResult.installedApps`, `onlyInstalledApps`). The guard no longer
+  blocks when an installed but unused tool is the only evidence; pass
+  `blockOnInstalledApps: true` for the previous behavior.
+* iOS: the privacy manifest is now bundled (CocoaPods and SwiftPM) and
+  declares the `UserDefaults` API. The App Attest key id moved to the Keychain
+  (this device only), a key App Attest no longer accepts is replaced by a new
+  enrollment automatically, and attestation requests run one at a time.
+* iOS: capture state is read from the app's window scene instead of the
+  deprecated `UIScreen.main`. The stale Swift unit test was replaced with real
+  tests, which CI now runs on the Simulator.
+* `verify()` throws `UnsupportedError` on platforms other than Android and iOS
+  instead of labelling them `android`. `SignalResult` compares by value and has
+  `toJson()`.
+* Android: the Xposed class check also asks the system class loader, and the
+  `getprop` fallback no longer leaks its process.
+
 ## 0.1.0
 
 * Docs: README sections for using `scan()` directly and for the guard, a rewritten
