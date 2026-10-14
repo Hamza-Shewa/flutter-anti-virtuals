@@ -37,6 +37,15 @@ internal data class Detection(
 
 /** Pure decision logic, kept free of Android types so it can be unit tested. */
 internal object Rules {
+    /**
+     * Splits installed fake-GPS apps into the one selected as the mock location app, which is active
+     * evidence, and the rest, which are only installed. A failed lookup counts as not selected.
+     */
+    fun mockLocationApps(installed: List<String>, isSelected: (String) -> Boolean): Pair<List<String>, List<String>> {
+        val (selected, unused) = installed.partition { runCatching { isSelected(it) }.getOrDefault(false) }
+        return selected.map { "mock location app selected: $it" } to unused.map { "mock app $it" }
+    }
+
     fun clockDetails(
         autoTime: Boolean?,
         autoTimeZone: Boolean?,

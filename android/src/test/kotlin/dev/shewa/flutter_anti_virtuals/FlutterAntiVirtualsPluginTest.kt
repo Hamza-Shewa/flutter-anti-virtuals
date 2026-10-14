@@ -598,3 +598,19 @@ internal class PreparedCacheTest {
         assertTrue(failed)
     }
 }
+
+internal class MockLocationAppsTest {
+    @Test
+    fun theSelectedMockAppIsActiveAndTheRestOnlyInstalled() {
+        val (active, installed) = Rules.mockLocationApps(listOf("a.fake.gps", "b.fake.gps")) { it == "b.fake.gps" }
+        assertEquals(listOf("mock location app selected: b.fake.gps"), active)
+        assertEquals(listOf("mock app a.fake.gps"), installed)
+    }
+
+    @Test
+    fun aLookupThatThrowsCountsAsNotSelected() {
+        val (active, installed) = Rules.mockLocationApps(listOf("a.fake.gps")) { throw SecurityException() }
+        assertTrue(active.isEmpty())
+        assertEquals(listOf("mock app a.fake.gps"), installed)
+    }
+}

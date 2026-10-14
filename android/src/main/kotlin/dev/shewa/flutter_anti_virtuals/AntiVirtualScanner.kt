@@ -3,6 +3,7 @@ package dev.shewa.flutter_anti_virtuals
 import android.Manifest
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.annotation.SuppressLint
+import android.app.AppOpsManager
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
@@ -156,7 +157,27 @@ internal class AntiVirtualScanner(private val context: Context) {
                 }
             }
         }
-        return Detection.of(details.distinct(), installed(KnownPackages.mockLocation).map { "mock app $it" })
+        val apps = installed(KnownPackages.mockLocation)
+        val (selected, unused) = Rules.mockLocationApps(apps, ::isMockLocationApp)
+        return Detection.of(details.distinct() + selected, unused)
+    }
+
+    /**
+     * True when [pkg] is the app picked under Developer options > Select mock location app: only
+     * that app has the mock location app op allowed.
+     */
+    private fun isMockLocationApp(pkg: String): Boolean {
+        val ops = context.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager ?: return false
+        val uid = try {
+            if (Build.VERSION.SDK_INT >= 33) pm.getApplicationInfo(pkg, PackageManager.ApplicationInfoFlags.of(0)).uid
+            else @Suppress("DEPRECATION") pm.getApplicationInfo(pkg, 0).uid
+        } catch (_: PackageManager.NameNotFoundException) {
+            return false
+        }
+        val mode =
+            if (Build.VERSION.SDK_INT >= 29) ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_MOCK_LOCATION, uid, pkg)
+            else @Suppress("DEPRECATION") ops.checkOpNoThrow(AppOpsManager.OPSTR_MOCK_LOCATION, uid, pkg)
+        return mode == AppOpsManager.MODE_ALLOWED
     }
 
     /** How long ago the fix was made, or null when the provider did not stamp it. */
