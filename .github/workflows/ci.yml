@@ -108,7 +108,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           working-directory: example
-          script: ../.github/scripts/android_integration_tests.sh
+          script: ../.github/scripts/integration_tests.sh
 
   ios:
     name: Build (iOS)
@@ -149,7 +149,8 @@ jobs:
             -destination "id=${{ steps.simulator.outputs.udid }}" -quiet
       - name: Integration tests (Simulator)
         working-directory: flutter_anti_virtuals/example
+        env:
+          SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
         run: |
-          xcrun simctl boot "${{ steps.simulator.outputs.udid }}" || true
-          flutter test integration_test -d "${{ steps.simulator.outputs.udid }}" \
-            --dart-define=EXPECT_EMULATOR=true
+          xcrun simctl boot "$SIMULATOR_UDID" || true
+          ../.github/scripts/integration_tests.sh

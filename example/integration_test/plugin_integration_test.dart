@@ -21,10 +21,23 @@ Future<void> pumpUntil(WidgetTester tester, Finder finder) async {
   fail('Timed out waiting for $finder');
 }
 
+/// `testWidgets` that logs its name when it starts, so the device log shows
+/// which test was running if one never finishes.
+void integrationTest(
+  String description,
+  WidgetTesterCallback body, {
+  bool skip = false,
+}) {
+  integrationTest(description, (tester) async {
+    debugPrint('integration test: $description');
+    await body(tester);
+  }, skip: skip);
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('scan answers every enabled signal and no check fails', (
+  integrationTest('scan answers every enabled signal and no check fails', (
     tester,
   ) async {
     final options = ScanOptions();
@@ -34,21 +47,21 @@ void main() {
     expect(report.failed, isEmpty, reason: 'checks that threw natively');
   });
 
-  testWidgets('check evaluates a single signal', (tester) async {
+  integrationTest('check evaluates a single signal', (tester) async {
     final result = await FlutterAntiVirtuals.instance.check(
       AntiVirtualSignal.vpn,
     );
     expect(result.supported, isTrue);
   });
 
-  testWidgets('the emulator is detected', (tester) async {
+  integrationTest('the emulator is detected', (tester) async {
     final result = await FlutterAntiVirtuals.instance.check(
       AntiVirtualSignal.emulator,
     );
     expect(result.detected, isTrue, reason: '${result.details}');
   }, skip: !onEmulator);
 
-  testWidgets('verify signs the scan with the nonce in the payload', (
+  integrationTest('verify signs the scan with the nonce in the payload', (
     tester,
   ) async {
     const nonce = 'integration-test-nonce-0001';
@@ -63,14 +76,16 @@ void main() {
     expect(signed.signature.publicKey, isNotEmpty);
   });
 
-  testWidgets('screen protection can be switched on and off', (tester) async {
+  integrationTest('screen protection can be switched on and off', (
+    tester,
+  ) async {
     await tester.pumpWidget(const MaterialApp(home: Text('protected')));
     await tester.pumpAndSettle();
     expect(await FlutterAntiVirtuals.instance.protectScreen(), isTrue);
     await FlutterAntiVirtuals.instance.unprotectScreen();
   });
 
-  testWidgets(
+  integrationTest(
     'the guard blocks on the emulator signal and lets in without it',
     (tester) async {
       Widget guard(Set<AntiVirtualSignal> blockOn) => MaterialApp(
