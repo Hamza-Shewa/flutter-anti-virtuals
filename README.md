@@ -5,8 +5,9 @@ jailbroken devices, hooking tools and other tampered environments in Flutter
 apps. Every finding comes with the evidence behind it, and a signed version of
 the report lets your server make the final decision.
 
-Android and iOS run the checks. Web, macOS, Windows and Linux build and run
-too, with every check reported as unsupported.
+Android and iOS run most of the checks. macOS, Windows and Linux check for
+VPNs, proxies, debuggers and virtual machines, and the web checks for browser
+automation. See [Platform support](#platform-support).
 
 ```dart
 final report = await FlutterAntiVirtuals.instance.scan();
@@ -18,6 +19,7 @@ if (report.hasAny({AntiVirtualSignal.vpn, AntiVirtualSignal.mockLocation})) {
 
 ## Contents
 
+- [Platform support](#platform-support)
 - [Installation](#installation)
 - [Scanning the device](#scanning-the-device)
 - [Blocking the app with AntiVirtualGuard](#blocking-the-app-with-antivirtualguard)
@@ -31,6 +33,33 @@ The [`example/`](example/) app has a runnable file for each way of using the
 plugin: `scan_example.dart`, `guard_example.dart`, `monitor_example.dart`, and
 `main.dart`, which shows everything at once.
 
+## Platform support
+
+| Feature | Android | iOS | macOS, Windows, Linux | Web |
+| --- | --- | --- | --- | --- |
+| [Signals](#signals) checked by `scan()` and `check()` | 22 of 23 | 15 of 23 | 5 of 23 | 2 of 23 |
+| `AntiVirtualGuard` and `AntiVirtualMonitor` | Yes | Yes | Yes | Yes |
+| Live change events (`environmentChanges`), which trigger a rescan | Network, displays, recording and calls | Network, recording and displays | No, the stream never emits | No, the stream never emits |
+| [Screenshot events](#protecting-the-screen) (`screenshots`) | Android 14+ | Yes | No | No |
+| [Screen protection](#protecting-the-screen) | `FLAG_SECURE`, touch filtering, overlay hiding on Android 12+ | Blur while recorded, mirrored or in the app switcher | No, the calls do nothing | No, the calls do nothing |
+| [`verify()`](#verifying-on-your-server) signed report | Hardware key with key attestation (StrongBox or TEE) | Secure Enclave key, no attestation | Throws `UnsupportedError` | Throws `UnsupportedError` |
+| Platform attestation | Play Integrity, classic and standard, with remediation dialogs | App Attest (not on the Simulator) and a DeviceCheck token | Throws `UnsupportedError` | Throws `UnsupportedError` |
+| `forceExit` | `SystemNavigator.pop()`, or `exit(0)` with `hardExit` | `exit(0)` | `exit(0)` | Keeps the blocking screen up |
+| Minimum version | Android 7.0 (API 24) | iOS 15 | Flutter's own minimums | Flutter's own minimums |
+
+Android leaves out `sideloaded`, which only applies to iOS. iOS leaves out
+`automation` and seven Android-only checks: `developerOptions`, `adb`,
+`untrustedInstaller`, `accessibilityAbuse`, `remoteControlApp`, `clonedApp` and
+`userCertificates`. On iOS, `virtualCamera` needs iOS 17, `clockTampering`
+needs a `trustedTime` and `signatureMismatch` needs `expectedTeamIds`.
+
+macOS, Windows and Linux check `vpn`, `proxy`, `debugger`, `emulator` (a
+virtual machine) and `clockTampering` against a `trustedTime`. The web checks
+`automation` and `clockTampering`. These checks are written in Dart; see
+[On desktop and the web](#on-desktop-and-the-web). Every other signal is
+unsupported there, and an unsupported result never counts as detected or
+failed.
+
 ## Installation
 
 ```sh
@@ -38,10 +67,10 @@ flutter pub add flutter_anti_virtuals
 ```
 
 Android needs `minSdk` 24. The plugin declares the permissions it uses
-(`ACCESS_NETWORK_STATE`, plus `HIDE_OVERLAY_WINDOWS` and
-`DETECT_SCREEN_RECORDING` for screen protection, all granted at install) and
-the package queries for the tools it looks for. Two checks depend on what your
-app already has:
+(`ACCESS_NETWORK_STATE`, `HIDE_OVERLAY_WINDOWS` and `DETECT_SCREEN_RECORDING`
+for screen protection, and `DETECT_SCREEN_CAPTURE` for screenshot events, all
+granted at install) and the package queries for the tools it looks for. Two
+checks depend on what your app already has:
 
 * `mockLocation` reads the last location fix only when the app already holds a
   location permission. The plugin never asks for it.
@@ -49,6 +78,9 @@ app already has:
 
 iOS needs iOS 15. To use App Attest, enable the App Attest capability
 (entitlement `com.apple.developer.devicecheck.appattest-environment`).
+DeviceCheck tokens need no capability. The `activeCall` check loads CallKit
+when it first runs. CallKit is not allowed in apps sold in mainland China, so
+turn the check off there with `ScanOptions(checkActiveCall: false)`.
 
 ## Scanning the device
 
@@ -75,7 +107,7 @@ Each signal ends up in one of four states:
 | --- | --- |
 | detected | `result.detected`. The details say what was found |
 | clean | The check ran and found nothing |
-| unsupported | `result.supported` is false: the platform cannot run this check (`adb` on iOS, every check on desktop and web). Never counted as detected |
+| unsupported | `result.supported` is false: the platform cannot run this check (`adb` on iOS, `rooted` on desktop). Never counted as detected |
 | failed | `result.failed`, with `result.error`: the check threw, or the native side left it out. Its state is unknown, so `report.isClean` is false while any check failed, and `report.failed` lists them |
 
 `mockLocation` and `virtualCamera` also separate what is in use from what is
@@ -117,7 +149,7 @@ misconfigured scan fails early:
 
 | Flag | Needs |
 | --- | --- |
-| `checkSignatureMismatch` | `expectedSignatureSha256`. The default `null` means "run when hashes are given", so a bare `ScanOptions()` still works. `true` without hashes fails the assertion; `false` turns the check off |
+| `checkSignatureMismatch` | `expectedSignatureSha256` (Android) or `expectedTeamIds` (iOS), or both. The default `null` means "run when either is given", so a bare `ScanOptions()` still works. `true` without either fails the assertion; `false` turns the check off. A platform whose list is empty reports the check as unsupported |
 | `checkUntrustedInstaller` | A non-empty `trustedInstallers`. The default lists the major app stores |
 
 `accessibilityAbuse` ignores the services in `allowedAccessibilityServices`,
@@ -125,6 +157,38 @@ for example `com.google.android.marvin.talkback` for TalkBack.
 `checkClockTampering` works on its own by looking at the automatic date and
 time settings. Pass `trustedTime` from a server response to also compare the
 device clock against it.
+
+### Fraud context
+
+Three checks look at the situation a scam needs rather than at tampering.
+None of them blocks by default; add them to `blockOn`, or better, ask for a
+second factor or slow down a payment when they fire.
+
+* `activeCall` fires while a phone or VoIP call is in progress. Scammers keep
+  victims on the line while they approve a transfer. Android reads the audio
+  mode (no permission needed) and a call starting or ending emits on
+  `environmentChanges` on Android 12 and later. iOS asks CallKit.
+* `noScreenLock` fires when the device has no PIN, pattern, password or
+  passcode, so anyone holding the phone gets into a signed-in app.
+* `appDataMigrated` fires when the app's data was created on another device:
+  restored from a backup onto a new phone, moved with a device transfer or
+  copied off a rooted one. A session token that came along with it should not
+  be trusted. The plugin keeps an id in the app's data and a key or Keychain
+  item that stays on the device. After the user signs in again, accept the
+  data on this device:
+
+```dart
+final report = await FlutterAntiVirtuals.instance.scan();
+if (report.isDetected(AntiVirtualSignal.appDataMigrated)) {
+  await signOut();
+  // ... once the user has signed in again:
+  await FlutterAntiVirtuals.instance.rebindDevice();
+}
+```
+
+The first scan after installing the app binds it, so it never fires on a
+fresh install. An app that turns backups off (`android:allowBackup="false"`)
+never sees it on Android.
 
 ## Blocking the app with AntiVirtualGuard
 
@@ -292,11 +356,12 @@ monitor.
 
 The network watcher is public as well.
 `FlutterAntiVirtuals.instance.environmentChanges` emits when the network setup
-changes or the screen starts or stops being recorded or mirrored. It carries
-no data, so call `scan()` to find out what changed, and it says nothing about
-the state that already exists when you start listening. Any number of
-listeners can share it. Where the native side is missing, for example in a
-widget test that mocks only the method channel, it never emits.
+changes, the screen starts or stops being recorded or mirrored, or (Android 12
+and later) a call starts or ends. It carries no data, so call `scan()` to find
+out what changed, and it says nothing about the state that already exists when
+you start listening. Any number of listeners can share it. Where the native
+side is missing, for example in a widget test that mocks only the method
+channel, it never emits.
 
 ## Protecting the screen
 
@@ -325,6 +390,18 @@ default. You can also call `FlutterAntiVirtuals.instance.protectScreen()` and
 while any guard or call still asks for it, and `unprotectScreen()` withdraws
 only its own request. On Android the plugin clears only the flags it set, so a
 `FLAG_SECURE` your app sets itself stays.
+
+To learn about screenshots without blocking them, listen to
+`FlutterAntiVirtuals.instance.screenshots`. It emits after the user takes one:
+on Android 14 and later while your activity is visible (Android then tells the
+user that the app noticed; screenshots taken through adb are not reported),
+and on iOS. It never emits elsewhere.
+
+```dart
+FlutterAntiVirtuals.instance.screenshots.listen((_) {
+  analytics.log('screenshot on the card details screen');
+});
+```
 
 ## Verifying on your server
 
@@ -374,6 +451,27 @@ final signed = await FlutterAntiVirtuals.instance.verify(
 );
 ```
 
+When the verdict fails, Google Play can often fix it with one of its own
+dialogs: get the app from Play, close apps that capture or control the screen,
+or repair the device's integrity. Your server reads the verdict and picks the
+dialog, and the app shows it for the token it got earlier in the same session:
+
+```dart
+final result = await FlutterAntiVirtuals.instance.showPlayIntegrityDialog(
+  PlayIntegrityDialog.values.byName(response['dialog']), // e.g. closeUnknownAccessRisk
+);
+if (result == PlayIntegrityDialogResult.successful) {
+  // Ask for a new token: the old one keeps its verdict.
+}
+```
+
+On iOS, `AttestationOptions(deviceCheck: true)` adds a DeviceCheck token. With
+it your server reads and sets two bits that Apple keeps for the device and that
+stay after the app is deleted and installed again, such as "already got the
+sign-up bonus".
+Android gets the same kind of memory from the Play Integrity verdict (device
+recall), configured in the Play Console.
+
 ### Checking it on the server
 
 [`doc/server-verification.md`](doc/server-verification.md) lists every check
@@ -381,27 +479,33 @@ the server has to make. The
 [`anti_virtuals_verifier`](packages/anti_virtuals_verifier/) package in this
 repository makes them for a Dart backend: nonce, age, signature, the Android
 key attestation chain up to Google's roots with the revocation list, the
-attested app and boot state, a decoded Play Integrity verdict, and your signal
-policy.
+attested app and boot state, a decoded Play Integrity verdict with its
+environment details and the remediation dialog that fits, App Attest
+attestations and assertions, and your signal policy. It also has clients for
+Play Integrity token decoding and device recall, Apple's DeviceCheck two bits
+and the App Attest risk metric.
 
 ```dart
 final verifier = SignedReportVerifier(
   nonces: nonceStore,
+  appAttestKeys: appAttestKeyStore, // your table of enrolled App Attest keys
   policy: const VerificationPolicy(
     android: AndroidPolicy(
       packageNames: {'com.example.app'},
       signingCertificateDigests: {'AB:CD:…'},
     ),
+    ios: IosPolicy(teamId: 'ABCDE12345', bundleIds: {'com.example.app'}),
   ),
 );
 
 final result = await verifier.verify(body['report']);
-if (result is Rejected) return forbidden();
+if (result is Rejected) return forbidden(dialog: result.remediation?.name);
 ```
 
-It does not verify App Attest objects.
-
 ## Signals
+
+The table covers Android and iOS. For macOS, Windows, Linux and the web see
+[On desktop and the web](#on-desktop-and-the-web).
 
 | Signal | Android | iOS | How it is detected |
 | --- | --- | --- | --- |
@@ -418,15 +522,34 @@ It does not verify App Attest objects.
 | `adb` | yes | no | USB and wireless debugging |
 | `clockTampering` | yes | with `trustedTime` | Automatic time or time zone off, skew against server time |
 | `untrustedInstaller` | yes | no | An installer that is not in `trustedInstallers` (Play, Galaxy Store, AppGallery, Amazon and GetApps by default). On Android 11+ an install started from the shell that claims an installer, as in `adb install -i com.android.vending`, is reported too. Builds installed with adb, debug builds included, report no installer |
-| `signatureMismatch` | yes | no | Signing certificate SHA-256 against `expectedSignatureSha256` |
+| `signatureMismatch` | yes | with `expectedTeamIds` | Android: signing certificate SHA-256 against `expectedSignatureSha256`. iOS: the team ID in the app's keychain access group against `expectedTeamIds`, and an App Store build whose binary is no longer encrypted (a dumped copy) |
 | `accessibilityAbuse` | yes | no | Non-system services that can read window content |
 | `remoteControlApp` | yes | no | AnyDesk, TeamViewer, RustDesk and similar apps installed |
 | `clonedApp` | yes | no | Unexpected data directory or process name, known cloner apps |
 | `userCertificates` | yes | no | User-installed CA certificates |
 | `sideloaded` | no | yes | An embedded provisioning profile |
+| `automation` | yes | no | The monkey tester, test harness mode, a connected UiAutomation (UI Automator, Appium) and installed automation helpers (`installedApps`) |
+| `activeCall` | yes | yes | Android: the audio mode of a cellular or VoIP call. iOS: a connected CallKit call |
+| `noScreenLock` | yes | yes | `KeyguardManager.isDeviceSecure` on Android, `LAContext` on iOS |
+| `appDataMigrated` | yes | yes | The id in the app's data has no matching Android Keystore key or Keychain item on this device. Cleared by `rebindDevice()` |
 
 A hooking tool can rename itself or hide its mappings, so a `hooked` detection
 is strong evidence and a clean result is no evidence either way.
+
+### On desktop and the web
+
+| Signal | macOS | Windows | Linux | Web |
+| --- | --- | --- | --- | --- |
+| `vpn` | Connected services in `scutil --nc list`, `utun`, `ipsec`, `ppp`, `tun` and `tap` interfaces with routable addresses | Adapters named after VPN drivers and clients (WireGuard, Wintun, TAP, OpenVPN, NordLynx, Proton, AnyConnect, FortiClient, GlobalProtect, ZeroTier, Tailscale) | `tun`, `tap`, `wg`, `ppp`, `ipsec`, `vti`, `nordlynx`, `tailscale` and `zt` interfaces | no |
+| `proxy` | `scutil --proxy` (HTTP, HTTPS, SOCKS, PAC) | Internet Settings in the registry (proxy server, PAC) | GNOME proxy mode | no |
+| `debugger` | `ps` marks the process as traced | `IsDebuggerPresent` | `TracerPid` | no |
+| `emulator` | `kern.hv_vmm_present`, a virtual `hw.model` | BIOS manufacturer and product | DMI vendor and product | no |
+| `automation` | no | no | no | `navigator.webdriver`, headless Chrome |
+| `clockTampering` | with `trustedTime` | with `trustedTime` | with `trustedTime` | with `trustedTime` |
+
+All three desktop systems also count `HTTP_PROXY`, `HTTPS_PROXY` and
+`ALL_PROXY` in the process environment as a proxy. On desktop, `emulator`
+means a virtual machine, which also covers cloud desktops and CI runners.
 
 ## Limits
 
@@ -440,13 +563,18 @@ result on your server for anything that matters. See
 [`doc/hardening.md`](doc/hardening.md).
 
 iOS reports fewer signals than Android (no developer options, ADB, installer,
-signature, accessibility, remote-control, clone or user CA checks) and has no
-key attestation. App Attest does not work on the Simulator. CI builds the
-Swift code and runs its unit and integration tests on the Simulator, but it has
-not yet been tested on a physical iPhone.
+accessibility, remote-control, clone, user CA or automation checks) and has no
+key attestation. App Attest and DeviceCheck do not work on the Simulator. CI
+builds the Swift code and runs its unit and integration tests on the
+Simulator, but it has not yet been tested on a physical iPhone.
+
+The desktop and web checks are best effort. They read what the operating
+system or browser tells any program, so a user who controls the machine can
+hide a VPN behind an unusual adapter name or patch `navigator.webdriver`.
+Nothing there can be attested, and `verify()` is not available.
 
 The lists of known apps (mock location, remote control, cloners, root
-managers, hooking apps) need updates as new tools appear. Location and camera
+managers, hooking apps, automation tools) need updates as new tools appear. Location and camera
 spoofing done through hooks is invisible to these checks.
 
 Android keeps the last fix of every location provider, so only fixes younger

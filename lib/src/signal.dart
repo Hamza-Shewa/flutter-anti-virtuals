@@ -10,6 +10,7 @@ enum AntiVirtualSignal {
   hooked,
   debugger,
   screenCapture,
+  automation,
 
   // Device settings, app integrity and abuse of system features.
   developerOptions,
@@ -21,7 +22,12 @@ enum AntiVirtualSignal {
   remoteControlApp,
   clonedApp,
   userCertificates,
-  sideloaded;
+  sideloaded,
+
+  // Fraud context: the device or session is in a state scams rely on.
+  activeCall,
+  noScreenLock,
+  appDataMigrated;
 
   /// Wire name used on the platform channel.
   String get key => name;

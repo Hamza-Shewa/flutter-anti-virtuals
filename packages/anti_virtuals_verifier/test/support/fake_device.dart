@@ -15,10 +15,11 @@ const packageName = 'com.example.app';
 const signingDigest =
     'aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899';
 
-final class _Key {
-  _Key(this.private, this.public);
+/// A P-256 key pair for test certificates and signatures.
+final class TestKey {
+  TestKey(this.private, this.public);
 
-  factory _Key.generate(pc.SecureRandom random) {
+  factory TestKey.generate(pc.SecureRandom random) {
     final generator = pc.ECKeyGenerator()
       ..init(
         pc.ParametersWithRandom(
@@ -27,7 +28,7 @@ final class _Key {
         ),
       );
     final pair = generator.generateKeyPair();
-    return _Key(pair.privateKey, pair.publicKey);
+    return TestKey(pair.privateKey, pair.publicKey);
   }
 
   final pc.ECPrivateKey private;
@@ -55,7 +56,7 @@ final class _Key {
   }
 }
 
-Uint8List _name(String commonName) => DerWriter.sequence([
+Uint8List testName(String commonName) => DerWriter.sequence([
   DerWriter.set([
     DerWriter.sequence([
       DerWriter.oid('2.5.4.3'),
@@ -64,25 +65,27 @@ Uint8List _name(String commonName) => DerWriter.sequence([
   ]),
 ]);
 
-Uint8List _certificate({
+/// A certificate signed by [signer] with ECDSA SHA-256.
+Uint8List testCertificate({
   required int serial,
   required String issuer,
   required String subject,
   required Uint8List subjectSpki,
-  required _Key signer,
+  required TestKey signer,
   Map<String, Uint8List> extensions = const {},
+  DateTime? notBefore,
   DateTime? notAfter,
 }) {
   final tbs = DerWriter.sequence([
     DerWriter.explicit(0, DerWriter.integer(2)),
     DerWriter.integer(serial),
     DerWriter.sequence([DerWriter.oid(_ecdsaSha256)]),
-    _name(issuer),
+    testName(issuer),
     DerWriter.sequence([
-      DerWriter.utcTime(DateTime.utc(2020)),
+      DerWriter.utcTime(notBefore ?? DateTime.utc(2020)),
       DerWriter.utcTime(notAfter ?? DateTime.utc(2048)),
     ]),
-    _name(subject),
+    testName(subject),
     subjectSpki,
     if (extensions.isNotEmpty)
       DerWriter.explicit(
@@ -159,16 +162,16 @@ Uint8List _hexBytes(String hex) => Uint8List.fromList([
 final class FakeDevice {
   FakeDevice({int seed = 1}) : _random = pc.FortunaRandom() {
     _random.seed(pc.KeyParameter(Uint8List.fromList(List.filled(32, seed))));
-    _root = _Key.generate(_random);
-    _intermediate = _Key.generate(_random);
-    rootCertificate = _certificate(
+    _root = TestKey.generate(_random);
+    _intermediate = TestKey.generate(_random);
+    rootCertificate = testCertificate(
       serial: 1,
       issuer: 'Test Root',
       subject: 'Test Root',
       subjectSpki: _root.spki,
       signer: _root,
     );
-    intermediateCertificate = _certificate(
+    intermediateCertificate = testCertificate(
       serial: 0x2c8cdddfd5e03bfc,
       issuer: 'Test Root',
       subject: 'Test Intermediate',
@@ -178,8 +181,8 @@ final class FakeDevice {
   }
 
   final pc.FortunaRandom _random;
-  late final _Key _root;
-  late final _Key _intermediate;
+  late final TestKey _root;
+  late final TestKey _intermediate;
   late final Uint8List rootCertificate;
   late final Uint8List intermediateCertificate;
 
@@ -199,10 +202,10 @@ final class FakeDevice {
     bool attestOtherKey = false,
     Map<String, Object?>? attestation,
   }) {
-    final key = _Key.generate(_random);
-    final attestedKey = attestOtherKey ? _Key.generate(_random) : key;
+    final key = TestKey.generate(_random);
+    final attestedKey = attestOtherKey ? TestKey.generate(_random) : key;
     final payload = payloadText(nonce, issuedAt, 'android', signals);
-    final leaf = _certificate(
+    final leaf = testCertificate(
       serial: 3,
       issuer: 'Test Intermediate',
       subject: 'Android Keystore Key',
@@ -235,15 +238,18 @@ final class FakeDevice {
     };
   }
 
-  /// The JSON an iPhone sends: a raw P-256 point and no chain.
+  /// The JSON an iPhone sends: a raw P-256 point and no chain. [attestation]
+  /// builds the App Attest map from the payload.
   Map<String, Object?> iosReport({
     required String nonce,
     required DateTime issuedAt,
+    Map<String, Object?>? Function(String payload)? attestation,
   }) {
-    final key = _Key.generate(_random);
+    final key = TestKey.generate(_random);
     final payload = payloadText(nonce, issuedAt, 'iOS', const {
       'vpn': {'detected': false, 'supported': true},
     });
+    final appAttest = attestation?.call(payload);
     return {
       'payload': payload,
       'signature': base64.encode(key.sign(utf8.encode(payload))),
@@ -252,6 +258,7 @@ final class FakeDevice {
       'protection': 'hardware',
       'attested': false,
       'certificateChain': <String>[],
+      'attestation': ?appAttest,
     };
   }
 }

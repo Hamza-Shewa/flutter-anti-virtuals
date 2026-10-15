@@ -2,6 +2,19 @@ package dev.shewa.flutter_anti_virtuals
 
 /** Package names the scanner recognises. Extend as new tools appear. */
 internal object KnownPackages {
+    /** UI automation and test tools that can drive other apps. */
+    val automation = setOf(
+        "io.appium.settings",
+        "io.appium.uiautomator2.server",
+        "io.appium.uiautomator2.server.test",
+        "io.appium.unlock",
+        "com.github.uiautomator",
+        "com.github.uiautomator.test",
+        "com.android.adbkeyboard",
+        "org.autojs.autojs",
+        "org.autojs.autojspro"
+    )
+
     val mockLocation = setOf(
         "com.lexa.fakegps",
         "com.incorporateapps.fakegps.fre",

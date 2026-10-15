@@ -1,3 +1,35 @@
+## 0.3.0
+
+* Four new signals. `activeCall` fires while a phone or VoIP call is in
+  progress (Android audio mode, iOS CallKit), and on Android 12+ a call
+  starting or ending emits on `environmentChanges`. `noScreenLock` fires on a
+  device without a PIN, pattern, password or passcode. `appDataMigrated`
+  fires when the app's data was restored from a backup or moved from another
+  device; `FlutterAntiVirtuals.instance.rebindDevice()` accepts it again.
+  `automation` (Android and web) reports the monkey tester, test harness mode,
+  a connected UiAutomation, installed automation tools, WebDriver and
+  headless Chrome. None of them blocks by default.
+* `FlutterAntiVirtuals.instance.screenshots` emits after the user takes a
+  screenshot (Android 14+, iOS). Android declares the
+  `DETECT_SCREEN_CAPTURE` permission for it, granted at install.
+* `showPlayIntegrityDialog()` shows Google Play's remediation dialogs
+  (`PlayIntegrityDialog`: get the app from Play, close risky apps, fix device
+  integrity) for the last token of the session. The Play Integrity library is
+  now 1.5.0.
+* iOS: `signatureMismatch` checks the team ID that signed the app against
+  the new `ScanOptions.expectedTeamIds`, and reports an App Store build whose
+  binary is no longer encrypted.
+* iOS: `AttestationOptions(deviceCheck: true)` adds a DeviceCheck token
+  (`PlatformAttestation.deviceCheckToken`) for Apple's per-device two bits.
+* macOS, Windows and Linux now check `vpn`, `proxy`, `debugger`, `emulator`
+  (a virtual machine) and `clockTampering` against a `trustedTime`, and the
+  web checks `automation` and `clockTampering`. A guard on these platforms can
+  now block: one with the default `blockOn` blocks a desktop app behind a VPN
+  or proxy, as it does on Android and iOS. On the web, `forceExit` keeps the
+  blocking screen up instead of throwing.
+* README: a platform support table for every platform, and sections on the
+  fraud context checks, screenshot events and the desktop and web checks.
+
 ## 0.2.0
 
 * `AntiVirtualMonitor` runs the guard's scans and blocking decision without a

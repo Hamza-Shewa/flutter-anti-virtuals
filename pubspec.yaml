@@ -1,6 +1,6 @@
 name: flutter_anti_virtuals
 description: "Detects VPNs, proxies, mock location, virtual cameras and other tampered or virtualized environments on Android and iOS."
-version: 0.2.0
+version: 0.3.0
 repository: https://github.com/Hamza-Shewa/flutter-anti-virtuals
 issue_tracker: https://github.com/Hamza-Shewa/flutter-anti-virtuals/issues
 topics:
@@ -48,16 +48,16 @@ flutter:
         pluginClass: FlutterAntiVirtualsPlugin
       ios:
         pluginClass: FlutterAntiVirtualsPlugin
-      # No native checks on these platforms: every signal reports unsupported.
+      # Checks written in Dart on these platforms (see the README).
       macos:
-        dartPluginClass: FlutterAntiVirtualsUnsupported
-        dartFileName: src/platform/unsupported_platform.dart
+        dartPluginClass: FlutterAntiVirtualsDesktop
+        dartFileName: src/platform/desktop/desktop_platform.dart
       windows:
-        dartPluginClass: FlutterAntiVirtualsUnsupported
-        dartFileName: src/platform/unsupported_platform.dart
+        dartPluginClass: FlutterAntiVirtualsDesktop
+        dartFileName: src/platform/desktop/desktop_platform.dart
       linux:
-        dartPluginClass: FlutterAntiVirtualsUnsupported
-        dartFileName: src/platform/unsupported_platform.dart
+        dartPluginClass: FlutterAntiVirtualsDesktop
+        dartFileName: src/platform/desktop/desktop_platform.dart
       web:
         pluginClass: FlutterAntiVirtualsWeb
         fileName: src/platform/web_plugin.dart

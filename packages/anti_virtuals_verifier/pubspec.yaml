@@ -1,6 +1,6 @@
 name: anti_virtuals_verifier
-description: Verifies on your server the device reports signed by flutter_anti_virtuals, including Android key attestation and Play Integrity verdicts.
-version: 0.1.0
+description: Verifies on your server the device reports signed by flutter_anti_virtuals, with Android key attestation, Play Integrity verdicts and Apple App Attest.
+version: 0.2.0
 repository: https://github.com/Hamza-Shewa/flutter-anti-virtuals/tree/main/packages/anti_virtuals_verifier
 issue_tracker: https://github.com/Hamza-Shewa/flutter-anti-virtuals/issues
 topics:

@@ -1,5 +1,6 @@
 package dev.shewa.flutter_anti_virtuals
 
+import android.app.Activity
 import android.content.Context
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -17,8 +18,12 @@ class FlutterAntiVirtualsPlugin : FlutterPlugin, ActivityAware, MethodCallHandle
     private lateinit var changes: EventChannel
     private var watcher: NetworkWatcher? = null
     private var displays: DisplayWatcher? = null
+    private var calls: CallWatcher? = null
     private var sink: EventChannel.EventSink? = null
+    private lateinit var screenshotChannel: EventChannel
+    private val screenshots = ScreenshotWatcher()
     private val protector = ScreenProtector()
+    private var activity: Activity? = null
     private lateinit var context: Context
     private lateinit var integrity: PlayIntegrity
     private var worker: ExecutorService? = null
@@ -32,6 +37,13 @@ class FlutterAntiVirtualsPlugin : FlutterPlugin, ActivityAware, MethodCallHandle
         channel.setMethodCallHandler(this)
         changes = EventChannel(binding.binaryMessenger, "flutter_anti_virtuals/changes")
         changes.setStreamHandler(this)
+        screenshotChannel = EventChannel(binding.binaryMessenger, "flutter_anti_virtuals/screenshots")
+        screenshotChannel.setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink) =
+                screenshots.listen { events.success("screenshot") }
+
+            override fun onCancel(arguments: Any?) = screenshots.stop()
+        })
     }
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
@@ -51,6 +63,11 @@ class FlutterAntiVirtualsPlugin : FlutterPlugin, ActivityAware, MethodCallHandle
             displays = DisplayWatcher(context, mainHandler) { events.success("capture") }.also { it.start() }
         } catch (_: Throwable) {
         }
+        // So is a call starting: scams run while the victim is on the phone.
+        try {
+            calls = CallWatcher(context) { events.success("call") }.also { it.start() }
+        } catch (_: Throwable) {
+        }
     }
 
     override fun onCancel(arguments: Any?) {
@@ -59,19 +76,29 @@ class FlutterAntiVirtualsPlugin : FlutterPlugin, ActivityAware, MethodCallHandle
         watcher = null
         displays?.stop()
         displays = null
+        calls?.stop()
+        calls = null
     }
 
-    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
-        protector.attach(binding.activity) { sink?.success("capture") }
+    override fun onAttachedToActivity(binding: ActivityPluginBinding) = attach(binding.activity)
+
+    override fun onDetachedFromActivityForConfigChanges() = detach()
+
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) = attach(binding.activity)
+
+    override fun onDetachedFromActivity() = detach()
+
+    private fun attach(next: Activity) {
+        activity = next
+        protector.attach(next) { sink?.success("capture") }
+        screenshots.attach(next)
     }
 
-    override fun onDetachedFromActivityForConfigChanges() = protector.detach()
-
-    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
-        protector.attach(binding.activity) { sink?.success("capture") }
+    private fun detach() {
+        protector.detach()
+        screenshots.detach()
+        activity = null
     }
-
-    override fun onDetachedFromActivity() = protector.detach()
 
     @Suppress("UNCHECKED_CAST")
     override fun onMethodCall(call: MethodCall, result: Result) {
@@ -148,6 +175,36 @@ class FlutterAntiVirtualsPlugin : FlutterPlugin, ActivityAware, MethodCallHandle
                     )
                 }
             }
+            "showIntegrityDialog" -> {
+                val typeCode = ((call.arguments as? Map<String, Any?>)?.get("typeCode") as? Number)?.toInt()
+                if (typeCode == null) {
+                    result.error("bad_arguments", "typeCode is required", null)
+                    return
+                }
+                val current = activity ?: return result.success("unavailable")
+                integrity.showDialog(current, typeCode) { outcome ->
+                    outcome.fold(
+                        onSuccess = { result.success(it) },
+                        onFailure = { result.error("dialog_failed", it.message, it.javaClass.simpleName) }
+                    )
+                }
+            }
+            "rebindDevice" -> {
+                val executor = worker
+                if (executor == null) {
+                    result.error("detached", "Plugin is not attached to an engine", null)
+                    return
+                }
+                // Same thread as the scans, so a rebind never races a binding check.
+                executor.execute {
+                    try {
+                        DeviceBinding(context).rebind()
+                        mainHandler.post { result.success(true) }
+                    } catch (e: Exception) {
+                        mainHandler.post { result.error("rebind_failed", e.message, null) }
+                    }
+                }
+            }
             "setScreenProtection" -> {
                 val config = ScreenProtectionConfig.from(call.arguments as? Map<String, Any?>)
                 result.success(protector.apply(config))
@@ -159,6 +216,10 @@ class FlutterAntiVirtualsPlugin : FlutterPlugin, ActivityAware, MethodCallHandle
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
         changes.setStreamHandler(null)
+        screenshotChannel.setStreamHandler(null)
+        screenshots.stop()
+        calls?.stop()
+        calls = null
         watcher?.stop()
         watcher = null
         displays?.stop()

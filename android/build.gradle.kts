@@ -1,5 +1,5 @@
 group = "dev.shewa.flutter_anti_virtuals"
-version = "0.2.0"
+version = "0.3.0"
 
 buildscript {
     val kotlinVersion = "2.4.0"
@@ -72,7 +72,7 @@ kotlin {
 }
 
 dependencies {
-    implementation("com.google.android.play:integrity:1.4.0")
+    implementation("com.google.android.play:integrity:1.5.0")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("org.mockito:mockito-core:5.0.0")
 }

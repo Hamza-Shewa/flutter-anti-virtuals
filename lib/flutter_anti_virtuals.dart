@@ -129,6 +129,33 @@ class FlutterAntiVirtuals {
   Stream<void> get environmentChanges =>
       FlutterAntiVirtualsPlatform.instance.environmentChanges;
 
+  /// Emits right after the user takes a screenshot (Android 14 and later,
+  /// iOS). It cannot stop the screenshot: use [protectScreen] for that on
+  /// Android. Android reports screenshots taken with the device buttons
+  /// while your activity is visible and shows the user a notice that the
+  /// app noticed; screenshots taken through adb are not reported. The
+  /// stream never emits on other platforms.
+  Stream<void> get screenshots =>
+      FlutterAntiVirtualsPlatform.instance.screenshots;
+
+  /// Accepts the app's data on this device again after
+  /// [AntiVirtualSignal.appDataMigrated] was detected, typically once the
+  /// user has signed in again. Until then every scan keeps reporting it.
+  /// Returns false on platforms without the check.
+  Future<bool> rebindDevice() =>
+      FlutterAntiVirtualsPlatform.instance.rebindDevice();
+
+  /// Shows Google Play's remediation dialog for [dialog], which asks the user
+  /// to fix what made the last Play Integrity verdict fail (get the app from
+  /// Play, close risky apps, update Play services). Android only; it needs a
+  /// token requested by [verify] with [AttestationOptions] earlier in this
+  /// app session and a visible activity. Your backend decides which dialog
+  /// fits from the decoded verdict. After [PlayIntegrityDialogResult.successful],
+  /// call [verify] again: the dialog does not change the old token.
+  Future<PlayIntegrityDialogResult> showPlayIntegrityDialog(
+    PlayIntegrityDialog dialog,
+  ) => FlutterAntiVirtualsPlatform.instance.showPlayIntegrityDialog(dialog);
+
   /// Protects the screen that shows sensitive content: blocks screenshots,
   /// recording and casting, ignores touches through overlays and hides the app
   /// in the recent apps list (see [ScreenProtectionOptions] for what each

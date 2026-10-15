@@ -18,6 +18,10 @@ class MethodChannelFlutterAntiVirtuals extends FlutterAntiVirtualsPlatform {
   @visibleForTesting
   static const changesChannelName = 'flutter_anti_virtuals/changes';
 
+  /// Name of the event channel the native side reports screenshots on.
+  @visibleForTesting
+  static const screenshotsChannelName = 'flutter_anti_virtuals/screenshots';
+
   @override
   Future<AntiVirtualReport> scan(ScanOptions options) async {
     final raw = await methodChannel.invokeMapMethod<Object?, Object?>(
@@ -80,26 +84,49 @@ class MethodChannelFlutterAntiVirtuals extends FlutterAntiVirtualsPlatform {
     return prepared ?? false;
   }
 
-  // One shared stream: an event channel has a single message handler, so a
-  // stream per reader would let the newest listener steal the events and the
-  // first one to cancel stop them for everybody. Native starts watching with
-  // the first listener and stops with the last.
   @override
-  late final Stream<void> environmentChanges = _openChanges();
+  Future<bool> rebindDevice() async {
+    final rebound = await methodChannel.invokeMethod<bool>('rebindDevice');
+    return rebound ?? false;
+  }
+
+  @override
+  Future<PlayIntegrityDialogResult> showPlayIntegrityDialog(
+    PlayIntegrityDialog dialog,
+  ) async {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return PlayIntegrityDialogResult.unavailable;
+    }
+    final outcome = await methodChannel.invokeMethod<String>(
+      'showIntegrityDialog',
+      <String, Object?>{'typeCode': dialog.typeCode},
+    );
+    return PlayIntegrityDialogResult.fromName(outcome);
+  }
+
+  // One shared stream per event channel: an event channel has a single
+  // message handler, so a stream per reader would let the newest listener
+  // steal the events and the first one to cancel stop them for everybody.
+  // Native starts watching with the first listener and stops with the last.
+  @override
+  late final Stream<void> environmentChanges = _openEvents(changesChannelName);
+
+  @override
+  late final Stream<void> screenshots = _openEvents(screenshotsChannelName);
 
   // This is `EventChannel.receiveBroadcastStream` written out, because that
   // reports a failed activation (no native side, for example in a background
   // isolate or a host app's widget test) through `FlutterError.reportError`
   // instead of the stream. Here a missing native side is a stream that never
   // emits, and any other failure is an error event.
-  Stream<void> _openChanges() {
+  Stream<void> _openEvents(String channelName) {
     const codec = StandardMethodCodec();
-    const control = MethodChannel(changesChannelName);
+    final control = MethodChannel(channelName);
     final messenger = ServicesBinding.instance.defaultBinaryMessenger;
     late final StreamController<void> controller;
     controller = StreamController<void>.broadcast(
       onListen: () async {
-        messenger.setMessageHandler(changesChannelName, (reply) async {
+        messenger.setMessageHandler(channelName, (reply) async {
           if (reply == null) {
             await controller.close();
             return null;
@@ -121,7 +148,7 @@ class MethodChannelFlutterAntiVirtuals extends FlutterAntiVirtualsPlatform {
         }
       },
       onCancel: () async {
-        messenger.setMessageHandler(changesChannelName, null);
+        messenger.setMessageHandler(channelName, null);
         try {
           await control.invokeMethod<void>('cancel');
         } on MissingPluginException {

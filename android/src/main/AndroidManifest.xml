@@ -6,6 +6,8 @@
          recording (Android 15+). Both are normal permissions, granted at install. -->
     <uses-permission android:name="android.permission.HIDE_OVERLAY_WINDOWS" />
     <uses-permission android:name="android.permission.DETECT_SCREEN_RECORDING" />
+    <!-- Screenshot events (Android 14+). A normal permission, granted at install. -->
+    <uses-permission android:name="android.permission.DETECT_SCREEN_CAPTURE" />
 
     <!-- Package visibility (Android 11+) for the installed-app checks. -->
     <queries>
@@ -16,6 +18,7 @@
         <package android:name="com.ammyy.admin" />
         <package android:name="com.amphoras.hidemyroot" />
         <package android:name="com.amphoras.hidemyrootadfree" />
+        <package android:name="com.android.adbkeyboard" />
         <package android:name="com.android.flysilkworm" />
         <package android:name="com.android.virtualcamera" />
         <package android:name="com.anydesk.adcontrol.ad1" />
@@ -54,6 +57,8 @@
         <package android:name="com.genymotion.superuser" />
         <package android:name="com.genymotion.systempatcher" />
         <package android:name="com.github.lsposed.vcam" />
+        <package android:name="com.github.uiautomator" />
+        <package android:name="com.github.uiautomator.test" />
         <package android:name="com.google.android.launcher.layouts.genymotion" />
         <package android:name="com.gsmartstudio.fakegps" />
         <package android:name="com.hola.fakegps" />
@@ -125,6 +130,10 @@
         <package android:name="eu.chainfire.supersu" />
         <package android:name="fake.gps.location.spoofer.free" />
         <package android:name="info.red.virtual" />
+        <package android:name="io.appium.settings" />
+        <package android:name="io.appium.uiautomator2.server" />
+        <package android:name="io.appium.uiautomator2.server.test" />
+        <package android:name="io.appium.unlock" />
         <package android:name="io.github.a13e300.vcam" />
         <package android:name="io.github.huskydg.magisk" />
         <package android:name="io.github.lsposed.manager" />
@@ -134,6 +143,8 @@
         <package android:name="me.weishu.exp" />
         <package android:name="me.weishu.kernelsu" />
         <package android:name="net.sourceforge.vncviewer" />
+        <package android:name="org.autojs.autojs" />
+        <package android:name="org.autojs.autojspro" />
         <package android:name="org.lsposed.lspatch" />
         <package android:name="org.lsposed.manager" />
         <package android:name="org.meowcat.edxposed.manager" />

@@ -1,5 +1,6 @@
 package dev.shewa.flutter_anti_virtuals
 
+import android.app.Activity
 import android.content.Context
 import android.util.Base64
 import com.google.android.play.core.integrity.IntegrityManagerFactory
@@ -7,6 +8,7 @@ import com.google.android.play.core.integrity.IntegrityTokenRequest
 import com.google.android.play.core.integrity.StandardIntegrityManager.PrepareIntegrityTokenRequest
 import com.google.android.play.core.integrity.StandardIntegrityManager.StandardIntegrityTokenProvider
 import com.google.android.play.core.integrity.StandardIntegrityManager.StandardIntegrityTokenRequest
+import com.google.android.play.core.integrity.model.IntegrityDialogResponseCode
 import java.security.MessageDigest
 
 /** Pure helpers for the Play Integrity request, unit tested without Android. */
@@ -17,7 +19,18 @@ internal object PlayIntegrityRules {
      */
     fun binding(payload: String): ByteArray =
         MessageDigest.getInstance("SHA-256").digest(payload.toByteArray(Charsets.UTF_8))
+
+    /** The name Dart's `PlayIntegrityDialogResult` uses for a dialog's response code. */
+    fun dialogResult(code: Int): String = when (code) {
+        IntegrityDialogResponseCode.DIALOG_SUCCESSFUL -> "successful"
+        IntegrityDialogResponseCode.DIALOG_CANCELLED -> "cancelled"
+        IntegrityDialogResponseCode.DIALOG_FAILED -> "failed"
+        else -> "unavailable"
+    }
 }
+
+/** Shows a remediation dialog on top of an activity and reports its response code. */
+private typealias DialogLauncher = (Activity, Int, (Result<Int>) -> Unit) -> Unit
 
 /**
  * One prepared value per key, shared by every request for that key. A key is prepared at most
@@ -71,6 +84,9 @@ internal class PreparedCache<K, V>(private val prepare: (K, (Result<V>) -> Unit)
  */
 internal class PlayIntegrity(context: Context) {
     private val context = context.applicationContext
+
+    // The latest token response of this app session; remediation dialogs are shown for it.
+    private var lastResponse: DialogLauncher? = null
     private val providers = PreparedCache<Long, StandardIntegrityTokenProvider> { project, done ->
         val request = PrepareIntegrityTokenRequest.builder().setCloudProjectNumber(project).build()
         IntegrityManagerFactory.createStandard(this.context)
@@ -97,7 +113,14 @@ internal class PlayIntegrity(context: Context) {
             cloudProjectNumber,
             action = { provider, done ->
                 provider.request(request)
-                    .addOnSuccessListener { done(Result.success(tokenMap(it.token(), standard = true))) }
+                    .addOnSuccessListener { token ->
+                        lastResponse = { activity, code, shown ->
+                            token.showDialog(activity, code)
+                                .addOnSuccessListener { shown(Result.success(it)) }
+                                .addOnFailureListener { shown(Result.failure(it)) }
+                        }
+                        done(Result.success(tokenMap(token.token(), standard = true)))
+                    }
                     .addOnFailureListener { done(Result.failure(it)) }
             },
             onResult = onResult
@@ -116,8 +139,29 @@ internal class PlayIntegrity(context: Context) {
             }.build()
             IntegrityManagerFactory.create(context)
                 .requestIntegrityToken(request)
-                .addOnSuccessListener { onResult(Result.success(tokenMap(it.token(), standard = false))) }
+                .addOnSuccessListener { response ->
+                    lastResponse = { activity, code, shown ->
+                        response.showDialog(activity, code)
+                            .addOnSuccessListener { shown(Result.success(it)) }
+                            .addOnFailureListener { shown(Result.failure(it)) }
+                    }
+                    onResult(Result.success(tokenMap(response.token(), standard = false)))
+                }
                 .addOnFailureListener { onResult(Result.failure(it)) }
+        } catch (e: Exception) {
+            onResult(Result.failure(e))
+        }
+    }
+
+    /**
+     * Shows the remediation dialog [typeCode] (`IntegrityDialogTypeCode`) for the latest token
+     * response and reports how it ended. Without a response in this app session there is nothing
+     * to show it for, which reports `unavailable`.
+     */
+    fun showDialog(activity: Activity, typeCode: Int, onResult: (Result<String>) -> Unit) {
+        val launch = lastResponse ?: return onResult(Result.success("unavailable"))
+        try {
+            launch(activity, typeCode) { outcome -> onResult(outcome.map(PlayIntegrityRules::dialogResult)) }
         } catch (e: Exception) {
             onResult(Result.failure(e))
         }

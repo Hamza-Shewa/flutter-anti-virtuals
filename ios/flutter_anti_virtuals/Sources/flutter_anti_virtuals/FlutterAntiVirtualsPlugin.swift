@@ -14,6 +14,8 @@ public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHa
   private let worker = DispatchQueue(label: "dev.shewa.flutter_anti_virtuals")
   private var channel: FlutterMethodChannel?
   private var changes: FlutterEventChannel?
+  private var screenshotChannel: FlutterEventChannel?
+  private let screenshots = ScreenshotStream()
   private var monitor: NWPathMonitor?
   private var captureObservers: [NSObjectProtocol] = []
   private var protectionObservers: [NSObjectProtocol] = []
@@ -29,8 +31,12 @@ public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHa
     let changes = FlutterEventChannel(
       name: "flutter_anti_virtuals/changes", binaryMessenger: registrar.messenger())
     changes.setStreamHandler(instance)
+    let screenshotChannel = FlutterEventChannel(
+      name: "flutter_anti_virtuals/screenshots", binaryMessenger: registrar.messenger())
+    screenshotChannel.setStreamHandler(instance.screenshots)
     instance.channel = channel
     instance.changes = changes
+    instance.screenshotChannel = screenshotChannel
     // Published so that detachFromEngine is called.
     registrar.publish(instance)
   }
@@ -39,8 +45,11 @@ public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHa
     _ = onCancel(withArguments: nil)
     setPrivacyCover(enabled: false)
     changes?.setStreamHandler(nil)
+    screenshotChannel?.setStreamHandler(nil)
+    screenshots.stop()
     channel?.setMethodCallHandler(nil)
     changes = nil
+    screenshotChannel = nil
     channel = nil
   }
 
@@ -169,12 +178,39 @@ public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHa
         return
       }
       let reset = args["resetAppAttestKey"] as? Bool ?? false
-      AppAttest.request(payload: payload, reset: reset) { outcome in
+      let deviceCheck = args["deviceCheck"] as? Bool ?? false
+      let reply: (Result<[String: Any], DeviceKeyError>) -> Void = { outcome in
         DispatchQueue.main.async {
           switch outcome {
           case .success(let map): result(map)
           case .failure(let error):
             result(FlutterError(code: "attest_failed", message: error.message, details: nil))
+          }
+        }
+      }
+      AppAttest.request(payload: payload, reset: reset) { outcome in
+        guard deviceCheck, case .success(let attestation) = outcome else {
+          reply(outcome)
+          return
+        }
+        DeviceCheckToken.generate { token in
+          reply(
+            token.map { value in
+              attestation.merging(["deviceCheckToken": value]) { _, new in new }
+            })
+        }
+      }
+      return
+    }
+    if call.method == "rebindDevice" {
+      // The worker queue also runs the scans, so a rebind never races a binding check.
+      worker.async {
+        let rebound = DeviceBinding.rebind()
+        DispatchQueue.main.async {
+          if rebound {
+            result(true)
+          } else {
+            result(FlutterError(code: "rebind_failed", message: "could not save the device binding", details: nil))
           }
         }
       }
@@ -184,15 +220,36 @@ public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHa
       result(FlutterMethodNotImplemented)
       return
     }
-    let args = call.arguments as? [String: Any]
-    let wanted = (args?["signals"] as? [String]).map(Set.init)
-    let skewMs = (args?["maxClockSkewMs"] as? NSNumber)?.int64Value ?? 300_000
-    let trustedMs = (args?["trustedTimeMs"] as? NSNumber)?.int64Value
+    let config = ScanConfig(call.arguments as? [String: Any])
     worker.async {
-      let scanner = AntiVirtualScanner()
-      let report = scanner.scan(wanted: wanted, maxSkewMs: skewMs, trustedMs: trustedMs)
+      let report = AntiVirtualScanner().scan(config)
       DispatchQueue.main.async { result(report) }
     }
+  }
+}
+
+/// Reports screenshots the user takes while the app runs.
+final class ScreenshotStream: NSObject, FlutterStreamHandler {
+  private var observer: NSObjectProtocol?
+
+  func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink)
+    -> FlutterError?
+  {
+    stop()
+    observer = NotificationCenter.default.addObserver(
+      forName: UIApplication.userDidTakeScreenshotNotification, object: nil, queue: .main
+    ) { _ in events("screenshot") }
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    stop()
+    return nil
+  }
+
+  func stop() {
+    if let observer { NotificationCenter.default.removeObserver(observer) }
+    observer = nil
   }
 }
 
@@ -212,13 +269,38 @@ struct Detection {
   var detected: Bool
   var supported = true
   var details: [String] = []
+  /// Set when the check could not produce an answer: unknown, which is not the same as clean.
+  var error: String? = nil
 
   static let unsupported = Detection(detected: false, supported: false)
   static func of(_ details: [String]) -> Detection {
     Detection(detected: !details.isEmpty, details: details)
   }
+  static func failed(_ error: String) -> Detection {
+    Detection(detected: false, error: "check failed: \(error)")
+  }
   var map: [String: Any] {
-    ["detected": detected, "supported": supported, "details": details]
+    var map: [String: Any] = ["detected": detected, "supported": supported, "details": details]
+    if let error {
+      map["failed"] = true
+      map["error"] = error
+    }
+    return map
+  }
+}
+
+/// What `scan` was asked for.
+struct ScanConfig {
+  var signals: Set<String>?
+  var maxSkewMs: Int64 = 300_000
+  var trustedMs: Int64?
+  var expectedTeamIds: [String] = []
+
+  init(_ args: [String: Any]?) {
+    signals = (args?["signals"] as? [String]).map(Set.init)
+    maxSkewMs = (args?["maxClockSkewMs"] as? NSNumber)?.int64Value ?? 300_000
+    trustedMs = (args?["trustedTimeMs"] as? NSNumber)?.int64Value
+    expectedTeamIds = (args?["expectedTeamIds"] as? [String] ?? []).map { $0.uppercased() }
   }
 }
 
@@ -226,29 +308,41 @@ final class AntiVirtualScanner {
   private static let allSignals = [
     "vpn", "proxy", "mockLocation", "virtualCamera", "developerOptions", "adb",
     "clockTampering", "untrustedInstaller", "signatureMismatch", "accessibilityAbuse",
-    "remoteControlApp", "clonedApp", "userCertificates", "sideloaded", "emulator", "rooted", "hooked", "debugger", "screenCapture",
+    "remoteControlApp", "clonedApp", "userCertificates", "sideloaded", "emulator", "rooted",
+    "hooked", "debugger", "screenCapture", "automation", "activeCall", "noScreenLock",
+    "appDataMigrated",
   ]
 
-  func scan(wanted: Set<String>?, maxSkewMs: Int64, trustedMs: Int64?) -> [String: Any] {
+  func scan(_ config: ScanConfig) -> [String: Any] {
     var out: [String: Any] = [:]
-    for signal in Self.allSignals where wanted == nil || wanted!.contains(signal) {
+    for signal in Self.allSignals where config.signals?.contains(signal) ?? true {
       switch signal {
       case "vpn": out[signal] = vpn().map
       case "proxy": out[signal] = proxy().map
       case "mockLocation": out[signal] = mockLocation().map
       case "virtualCamera": out[signal] = virtualCamera().map
       case "clockTampering":
-        out[signal] = clock(maxSkewMs: maxSkewMs, trustedMs: trustedMs).map
+        out[signal] = clock(maxSkewMs: config.maxSkewMs, trustedMs: config.trustedMs).map
+      case "signatureMismatch":
+        out[signal] = AppIntegrity.detection(expectedTeamIds: config.expectedTeamIds).map
       case "sideloaded": out[signal] = sideloaded().map
       case "emulator": out[signal] = emulator().map
       case "rooted": out[signal] = jailbroken().map
       case "hooked": out[signal] = hooked().map
       case "debugger": out[signal] = debugger().map
       case "screenCapture": out[signal] = screenCapture().map
-      default: out[signal] = Detection.unsupported.map  // Android-only concepts.
+      case "activeCall": out[signal] = onMain(CallState.detection).map
+      case "noScreenLock": out[signal] = ScreenLock.detection().map
+      case "appDataMigrated": out[signal] = DeviceBinding.detection().map
+      // Android-only concepts, and automation, which iOS gives an app no way to see.
+      default: out[signal] = Detection.unsupported.map
       }
     }
     return out
+  }
+
+  private func onMain(_ read: () -> Detection) -> Detection {
+    Thread.isMainThread ? read() : DispatchQueue.main.sync(execute: read)
   }
 
   private func vpn() -> Detection {
@@ -567,27 +661,11 @@ enum DeviceKey {
 /// keys never leave the device, so a key id restored from a backup onto another device is
 /// useless; `UserDefaults` (used before) is backed up and restored, the Keychain item is not.
 enum AppAttestKeyStore {
-  private static let service = "dev.shewa.flutter_anti_virtuals"
   private static let account = "dev.shewa.flutter_anti_virtuals.appAttestKeyId"
-
-  private static var query: [String: Any] {
-    [
-      kSecClass as String: kSecClassGenericPassword,
-      kSecAttrService as String: service,
-      kSecAttrAccount as String: account,
-    ]
-  }
+  private static let item = KeychainItem(account: account)
 
   static func load() -> String? {
-    var lookup = query
-    lookup[kSecReturnData as String] = true
-    lookup[kSecMatchLimit as String] = kSecMatchLimitOne
-    var item: CFTypeRef?
-    if SecItemCopyMatching(lookup as CFDictionary, &item) == errSecSuccess,
-      let data = item as? Data, let keyId = String(data: data, encoding: .utf8)
-    {
-      return keyId
-    }
+    if case .success(let keyId?) = item.load() { return keyId }
     // Move a key id stored by an earlier version out of UserDefaults.
     let defaults = UserDefaults.standard
     guard let legacy = defaults.string(forKey: account) else { return nil }
@@ -597,15 +675,11 @@ enum AppAttestKeyStore {
   }
 
   static func save(_ keyId: String) {
-    SecItemDelete(query as CFDictionary)
-    var item = query
-    item[kSecValueData as String] = Data(keyId.utf8)
-    item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-    SecItemAdd(item as CFDictionary, nil)
+    item.save(keyId)
   }
 
   static func delete() {
-    SecItemDelete(query as CFDictionary)
+    item.delete()
     UserDefaults.standard.removeObject(forKey: account)
   }
 }

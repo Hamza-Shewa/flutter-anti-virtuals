@@ -210,6 +210,7 @@ void attestationTests() {
           'cloudProjectNumber': 7,
           'resetAppAttestKey': true,
           'playIntegrity': 'classic',
+          'deviceCheck': false,
         },
       );
       expect(
@@ -218,6 +219,29 @@ void attestationTests() {
           playIntegrity: PlayIntegrityRequest.standard,
         ).toMap()['playIntegrity'],
         'standard',
+      );
+    });
+
+    test('a DeviceCheck token goes along when there is one', () {
+      final attestation = PlatformAttestation.fromMap({
+        'type': 'appAttest',
+        'token': 'YXR0',
+        'keyId': 'key',
+        'assertion': true,
+        'deviceCheckToken': 'ZGM=',
+      });
+      expect(attestation.deviceCheckToken, 'ZGM=');
+      expect(attestation.toJson()['deviceCheckToken'], 'ZGM=');
+      expect(
+        const AttestationOptions(deviceCheck: true).toMap()['deviceCheck'],
+        isTrue,
+      );
+      expect(
+        PlatformAttestation.fromMap({
+          'type': 'appAttest',
+          'token': 'YXR0',
+        }).toJson().containsKey('deviceCheckToken'),
+        isFalse,
       );
     });
 

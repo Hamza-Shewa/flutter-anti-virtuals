@@ -107,6 +107,14 @@ class AntiVirtualMessages {
           'A user-installed security certificate was detected.',
       AntiVirtualSignal.sideloaded:
           'This app was installed outside the App Store.',
+      AntiVirtualSignal.automation:
+          'This app is being controlled by an automation tool.',
+      AntiVirtualSignal.activeCall:
+          'A phone call is in progress. End the call to continue.',
+      AntiVirtualSignal.noScreenLock:
+          'This device has no screen lock. Set a PIN, pattern or password to continue.',
+      AntiVirtualSignal.appDataMigrated:
+          'This app\'s data came from another device or a backup. Sign in again to continue.',
     },
   );
 
@@ -150,6 +158,14 @@ class AntiVirtualMessages {
       AntiVirtualSignal.userCertificates:
           'تم اكتشاف شهادة أمان مثبّتة من المستخدم.',
       AntiVirtualSignal.sideloaded: 'تم تثبيت هذا التطبيق من خارج App Store.',
+      AntiVirtualSignal.automation:
+          'يتم التحكم في هذا التطبيق بواسطة أداة أتمتة.',
+      AntiVirtualSignal.activeCall:
+          'هناك مكالمة هاتفية جارية. أنهِ المكالمة للمتابعة.',
+      AntiVirtualSignal.noScreenLock:
+          'لا يوجد قفل شاشة على هذا الجهاز. اضبط رمز PIN أو نمطاً أو كلمة مرور للمتابعة.',
+      AntiVirtualSignal.appDataMigrated:
+          'بيانات هذا التطبيق منقولة من جهاز آخر أو من نسخة احتياطية. سجّل الدخول مرة أخرى للمتابعة.',
     },
   );
 
@@ -197,6 +213,14 @@ class AntiVirtualMessages {
           'Un certificat de sécurité installé par l\'utilisateur a été détecté.',
       AntiVirtualSignal.sideloaded:
           'Cette application a été installée en dehors de l\'App Store.',
+      AntiVirtualSignal.automation:
+          "Cette application est contrôlée par un outil d'automatisation.",
+      AntiVirtualSignal.activeCall:
+          'Un appel téléphonique est en cours. Raccrochez pour continuer.',
+      AntiVirtualSignal.noScreenLock:
+          "Cet appareil n'a pas de verrouillage d'écran. Définissez un code, un schéma ou un mot de passe pour continuer.",
+      AntiVirtualSignal.appDataMigrated:
+          "Les données de cette application viennent d'un autre appareil ou d'une sauvegarde. Reconnectez-vous pour continuer.",
     },
   );
 
@@ -243,6 +267,14 @@ class AntiVirtualMessages {
           'Se detectó un certificado de seguridad instalado por el usuario.',
       AntiVirtualSignal.sideloaded:
           'Esta aplicación se instaló fuera de la App Store.',
+      AntiVirtualSignal.automation:
+          'Esta aplicación está siendo controlada por una herramienta de automatización.',
+      AntiVirtualSignal.activeCall:
+          'Hay una llamada telefónica en curso. Cuelga para continuar.',
+      AntiVirtualSignal.noScreenLock:
+          'Este dispositivo no tiene bloqueo de pantalla. Configura un PIN, patrón o contraseña para continuar.',
+      AntiVirtualSignal.appDataMigrated:
+          'Los datos de esta aplicación vienen de otro dispositivo o de una copia de seguridad. Vuelve a iniciar sesión para continuar.',
     },
   );
 
