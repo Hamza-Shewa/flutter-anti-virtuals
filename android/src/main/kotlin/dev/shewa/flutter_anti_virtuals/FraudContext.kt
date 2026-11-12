@@ -43,14 +43,15 @@ internal enum class BindingState { UNBOUND, BOUND, MIGRATED }
  * backups and transfers carry, is paired with an Android Keystore key named after it, which never
  * leaves the device. Data whose id has no key here came from somewhere else.
  *
- * Not thread safe; the plugin calls it from its single worker thread.
+ * A check that ran past its time limit can still be running when a rebind starts, so both hold
+ * the same lock.
  */
 internal class DeviceBinding(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
-    fun check(): Detection {
+    fun check(): Detection = synchronized(LOCK) {
         val id = prefs.getString(ID, null)
-        return when (FraudRules.binding(id, this::hasKey)) {
+        when (FraudRules.binding(id, this::hasKey)) {
             BindingState.UNBOUND -> {
                 bind()
                 Detection(false)
@@ -61,7 +62,7 @@ internal class DeviceBinding(context: Context) {
     }
 
     /** Accepts the current data on this device: the old binding is dropped and a new one made. */
-    fun rebind() {
+    fun rebind() = synchronized(LOCK) {
         prefs.getString(ID, null)?.let { old ->
             try { keyStore().deleteEntry(alias(old)) } catch (_: Exception) {}
         }
@@ -92,6 +93,7 @@ internal class DeviceBinding(context: Context) {
         const val KEYSTORE = "AndroidKeyStore"
         const val PREFERENCES = "dev.shewa.flutter_anti_virtuals.binding"
         const val ID = "id"
+        val LOCK = Any()
     }
 }
 

@@ -72,6 +72,7 @@ final class AndroidPolicy {
     this.minimumOsPatchLevel,
     this.checkCertificateDates = false,
     this.playIntegrity,
+    this.requiredSignals = const {},
   });
 
   /// Your application id, for example `com.example.app`.
@@ -100,6 +101,13 @@ final class AndroidPolicy {
 
   /// Also require a Play Integrity verdict. Null skips it.
   final PlayIntegrityPolicy? playIntegrity;
+
+  /// Signal keys an Android report must carry an answer for, for example
+  /// `{'rooted', 'hooked'}`. A report where one of them is missing (the app
+  /// turned the check off), unsupported or failed is rejected. Without this
+  /// a signal in [VerificationPolicy.blockOn] that the app never checked
+  /// passes.
+  final Set<String> requiredSignals;
 }
 
 /// What a decoded Play Integrity verdict must say.
@@ -169,6 +177,7 @@ final class IosPolicy {
     this.allowDevelopment = false,
     this.requireAppAttest = true,
     this.allowedValidationCategories,
+    this.requiredSignals = const {},
   });
 
   /// Your 10 character Team ID (the App ID prefix).
@@ -191,6 +200,13 @@ final class IosPolicy {
   /// data must be one of these, for example `{2, 4}` for TestFlight and the
   /// App Store. Objects from OS versions that do not include the value pass.
   final Set<int>? allowedValidationCategories;
+
+  /// Signal keys an iOS report must carry an answer for, see
+  /// [AndroidPolicy.requiredSignals]. iOS reports some checks as unsupported
+  /// depending on the app: `mockLocation` without a location permission,
+  /// `clockTampering` without a trusted time and `signatureMismatch` without
+  /// expected team IDs.
+  final Set<String> requiredSignals;
 
   /// `<TeamID>.<BundleID>` for every bundle identifier.
   Set<String> get appIds => {for (final id in bundleIds) '$teamId.$id'};

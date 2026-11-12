@@ -13,6 +13,10 @@ class _Platform extends FlutterAntiVirtualsPlatform
   int scans = 0;
   final changes = StreamController<void>.broadcast(sync: true);
 
+  /// Holds a scan back until it completes; the report is what the device
+  /// looked like when the scan started.
+  Completer<void>? gate;
+
   @override
   Stream<void> get environmentChanges => changes.stream;
 
@@ -20,10 +24,12 @@ class _Platform extends FlutterAntiVirtualsPlatform
   Future<AntiVirtualReport> scan(ScanOptions options) async {
     scans++;
     if (error != null) throw error!;
-    return AntiVirtualReport({
+    final report = AntiVirtualReport({
       for (final s in options.enabledSignals)
         s: SignalResult(detected: detected.contains(s)),
     });
+    await gate?.future;
+    return report;
   }
 }
 
@@ -122,6 +128,66 @@ void main() {
       monitor.options = ScanOptions(checkVpn: false);
       await pumpEventQueue();
       expect(platform.scans, 2);
+    });
+
+    test('rescan() during a scan completes with the scan after it', () async {
+      platform.gate = Completer<void>();
+      final monitor = AntiVirtualMonitor()..start();
+      addTearDown(monitor.dispose);
+      await pumpEventQueue();
+
+      // The VPN comes up after the running scan has read the device.
+      platform.detected = {AntiVirtualSignal.vpn};
+      var done = false;
+      final rescan = monitor.rescan().then((_) => done = true);
+      await pumpEventQueue();
+      expect(done, isFalse);
+
+      final first = platform.gate!;
+      platform.gate = Completer<void>();
+      first.complete();
+      await pumpEventQueue();
+      expect(monitor.value, isA<GuardAllowed>());
+      expect(done, isFalse);
+
+      platform.gate!.complete();
+      await rescan;
+      expect(monitor.value.isBlocked, isTrue);
+      expect(platform.scans, 2);
+    });
+
+    test('dispose() completes a rescan() that was still waiting', () async {
+      platform.gate = Completer<void>();
+      final monitor = AntiVirtualMonitor()..start();
+      await pumpEventQueue();
+      final rescan = monitor.rescan();
+      monitor.dispose();
+      await rescan;
+    });
+
+    testWidgets('a scan that hangs counts as failed after scanTimeout', (
+      tester,
+    ) async {
+      platform.gate = Completer<void>();
+      final errors = <Object>[];
+      final open = AntiVirtualMonitor(onError: (e, _) => errors.add(e))
+        ..start();
+      final closed = AntiVirtualMonitor(
+        failClosed: true,
+        scanTimeout: const Duration(seconds: 2),
+        onError: (e, _) => errors.add(e),
+      )..start();
+      addTearDown(open.dispose);
+      addTearDown(closed.dispose);
+
+      await tester.pump(const Duration(seconds: 3));
+      expect((closed.value as GuardBlocked).unverified, isTrue);
+      expect(open.value, isA<GuardScanning>());
+
+      await tester.pump(const Duration(seconds: 8));
+      expect(open.value, isA<GuardAllowed>());
+      expect(errors, everyElement(isA<TimeoutException>()));
+      expect(errors, hasLength(2));
     });
   });
 

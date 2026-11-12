@@ -1,3 +1,18 @@
+## 0.3.0
+
+* **Security fix: a forged Android key attestation was accepted.** The
+  verifier read the attestation from the first certificate without checking
+  that the certificates above it were allowed to issue one. A key attested on
+  any device, including an unlocked one running another app, could sign a
+  certificate that claimed your app, a locked bootloader and the current
+  nonce. A chain where a certificate above the leaf carries a key attestation
+  is now rejected with `RejectionReason.untrustedChain`. Every earlier
+  version is affected; update.
+* `AndroidPolicy.requiredSignals` and `IosPolicy.requiredSignals` reject a
+  report where one of the named signals is missing, unsupported or failed.
+  Empty by default. Before, a signal in `blockOn` that the app never checked
+  passed, and there was no way to insist on it.
+
 ## 0.2.0
 
 * App Attest for iOS reports: `IosPolicy` (team ID, bundle IDs, development

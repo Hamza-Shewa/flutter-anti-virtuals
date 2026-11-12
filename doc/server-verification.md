@@ -43,6 +43,9 @@ Apple server APIs below.
    * each certificate is signed by the next and the last one is a Google
      hardware attestation root (use Google's published roots and revocation
      list, which change; do not pin a single root forever);
+   * only the leaf carries the key attestation extension. An attested key
+     can sign a further certificate that claims anything, so reject a chain
+     where a certificate above the leaf has the extension too;
    * the leaf public key equals `publicKey`;
    * the key attestation extension (OID `1.3.6.1.4.1.11129.2.1.17`) has
      `attestationChallenge` equal to the SHA-256 of the nonce. This proves the
@@ -55,7 +58,11 @@ Apple server APIs below.
      An unlocked bootloader or a custom ROM fails here, which is stronger than
      any on-device root check.
 5. **Policy.** Only now read `payload.signals` and decide, for example reject
-   when `rooted`, `hooked`, `emulator` or `mockLocation` is detected.
+   when `rooted`, `hooked`, `emulator` or `mockLocation` is detected. A
+   signal the app did not check is absent, and one the platform cannot check
+   has `"supported":false`: decide which signals you insist on and reject a
+   report that has no answer for them (`requiredSignals` in
+   `anti_virtuals_verifier`).
 
 ## Platform attestation (Play Integrity, App Attest)
 

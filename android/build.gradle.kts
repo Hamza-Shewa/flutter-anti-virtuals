@@ -1,5 +1,5 @@
 group = "dev.shewa.flutter_anti_virtuals"
-version = "0.3.0"
+version = "0.4.0"
 
 buildscript {
     val kotlinVersion = "2.4.0"

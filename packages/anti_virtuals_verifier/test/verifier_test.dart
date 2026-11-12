@@ -213,6 +213,18 @@ void main() {
       );
     });
 
+    test('a certificate that an attested key signed itself', () async {
+      final report = device.androidReport(
+        nonce: nonces.issue(),
+        issuedAt: now,
+        forgeBelowAttestedKey: true,
+      );
+      expect(
+        await verifier().verify(report),
+        rejectedFor(RejectionReason.untrustedChain),
+      );
+    });
+
     test('a revoked certificate, listed in hex or in decimal', () async {
       for (final serial in ['2c8cdddfd5e03bfc', '3210184587844008956']) {
         final revocations = GoogleStatusList({
@@ -332,6 +344,39 @@ void main() {
           },
         ),
         rejectedFor(RejectionReason.blockedSignal),
+      );
+    });
+
+    test('a required signal that is missing, unsupported or failed', () async {
+      final requiring = verifier(
+        android: const AndroidPolicy(
+          packageNames: {packageName},
+          signingCertificateDigests: {signingDigest},
+          requiredSignals: {'rooted'},
+        ),
+      );
+      for (final signals in const <Map<String, Object?>>[
+        {},
+        {
+          'rooted': {'detected': false, 'supported': false},
+        },
+        {
+          'rooted': {'detected': false, 'supported': true, 'failed': true},
+        },
+      ]) {
+        expect(
+          await verifyAndroid(using: requiring, signals: signals),
+          rejectedFor(RejectionReason.blockedSignal),
+        );
+      }
+      expect(
+        await verifyAndroid(
+          using: requiring,
+          signals: const {
+            'rooted': {'detected': false, 'supported': true},
+          },
+        ),
+        isA<Accepted>(),
       );
     });
   });

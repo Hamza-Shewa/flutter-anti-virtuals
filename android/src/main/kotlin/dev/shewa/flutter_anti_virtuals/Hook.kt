@@ -73,7 +73,8 @@ internal object HookRules {
         e.installedPackages.sorted().forEach { details += "hooking app $it" }
         e.existingFiles.sorted().forEach { details += "hooking file $it" }
         e.hiddenPaths.sorted().forEach { details += "file API hides $it" }
-        if (e.fridaPortOpen) details += "Frida server port $FRIDA_PORT is open"
+        // Any app may listen on this port, so on its own it proves nothing.
+        if (e.fridaPortOpen && details.isNotEmpty()) details += "Frida server port $FRIDA_PORT is open"
 
         return details.distinct()
     }

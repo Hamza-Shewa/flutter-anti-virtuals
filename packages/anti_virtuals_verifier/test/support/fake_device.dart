@@ -191,6 +191,10 @@ final class FakeDevice {
 
   /// The JSON `SignedReport.toJson()` produces on Android. The arguments
   /// tamper with one part each.
+  ///
+  /// [forgeBelowAttestedKey] attests a key on an unlocked device running
+  /// another app, then lets that key sign a certificate for the signing key
+  /// that claims [description].
   Map<String, Object?> androidReport({
     required String nonce,
     required DateTime issuedAt,
@@ -200,11 +204,16 @@ final class FakeDevice {
     Uint8List? description,
     bool withChain = true,
     bool attestOtherKey = false,
+    bool forgeBelowAttestedKey = false,
     Map<String, Object?>? attestation,
   }) {
     final key = TestKey.generate(_random);
-    final attestedKey = attestOtherKey ? TestKey.generate(_random) : key;
+    final attestedKey = attestOtherKey || forgeBelowAttestedKey
+        ? TestKey.generate(_random)
+        : key;
     final payload = payloadText(nonce, issuedAt, 'android', signals);
+    final claimed =
+        description ?? keyDescription(challenge: sha256(utf8.encode(nonce)));
     final leaf = testCertificate(
       serial: 3,
       issuer: 'Test Intermediate',
@@ -212,10 +221,23 @@ final class FakeDevice {
       subjectSpki: attestedKey.spki,
       signer: _intermediate,
       extensions: {
-        _keyAttestation:
-            description ??
-            keyDescription(challenge: sha256(utf8.encode(nonce))),
+        _keyAttestation: forgeBelowAttestedKey
+            ? keyDescription(
+                challenge: sha256(utf8.encode('another request')),
+                package: 'com.attacker.app',
+                bootState: 2,
+                locked: false,
+              )
+            : claimed,
       },
+    );
+    final forged = testCertificate(
+      serial: 4,
+      issuer: 'Android Keystore Key',
+      subject: 'Forged',
+      subjectSpki: key.spki,
+      signer: attestedKey,
+      extensions: {_keyAttestation: claimed},
     );
     return {
       'payload': payload,
@@ -227,6 +249,7 @@ final class FakeDevice {
       'certificateChain': withChain
           ? [
               for (final der in [
+                if (forgeBelowAttestedKey) forged,
                 leaf,
                 intermediateCertificate,
                 rootCertificate,

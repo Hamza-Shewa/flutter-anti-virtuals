@@ -39,6 +39,7 @@ class AntiVirtualMonitor extends ChangeNotifier
     this.rescanOnResume = true,
     this.rescanDebounce = const Duration(seconds: 3),
     this.liveDebounce = const Duration(milliseconds: 500),
+    this.scanTimeout = const Duration(seconds: 10),
     this.onReport,
     this.onError,
   }) : _options = options ?? ScanOptions(),
@@ -78,6 +79,11 @@ class AntiVirtualMonitor extends ChangeNotifier
   /// burst of changes causes one scan.
   Duration liveDebounce;
 
+  /// A scan that takes longer than this counts as failed, with a
+  /// [TimeoutException], so a check that hangs cannot keep the app waiting.
+  /// `null` waits for as long as the scan takes.
+  Duration? scanTimeout;
+
   /// Called with every completed scan, blocking or not. Exceptions thrown
   /// here are reported through `FlutterError.reportError` and never unblock.
   ValueChanged<AntiVirtualReport>? onReport;
@@ -99,7 +105,8 @@ class AntiVirtualMonitor extends ChangeNotifier
   bool _started = false;
   bool _disposed = false;
   bool _inFlight = false;
-  bool _rescanQueued = false;
+  // Completes when the scan queued behind the running one has finished.
+  Completer<void>? _queued;
   bool _wasBackgrounded = false;
   bool _foreground = true;
   DateTime? _lastScanAt;
@@ -192,22 +199,21 @@ class AntiVirtualMonitor extends ChangeNotifier
     unawaited(rescan());
   }
 
-  /// Scans now. A scan that is already running is kept and another one runs
-  /// right after it, so the result reflects the state at the time of the
-  /// call.
+  /// Scans now and completes when [value] reflects the state at the time of
+  /// the call. A scan that is already running is kept and another one runs
+  /// right after it; the future then completes with that second scan.
   Future<void> rescan() async {
     if (_disposed) return;
-    if (_inFlight) {
-      _rescanQueued = true;
-      return;
-    }
+    if (_inFlight) return (_queued ??= Completer<void>()).future;
     _inFlight = true;
     notifyListeners();
     AntiVirtualReport? report;
     Object? failure;
     StackTrace? failureTrace;
     try {
-      report = await FlutterAntiVirtualsPlatform.instance.scan(_options);
+      final scan = FlutterAntiVirtualsPlatform.instance.scan(_options);
+      final limit = scanTimeout;
+      report = await (limit == null ? scan : scan.timeout(limit));
     } catch (error, stackTrace) {
       failure = error;
       failureTrace = stackTrace;
@@ -228,9 +234,10 @@ class AntiVirtualMonitor extends ChangeNotifier
       _decide(force: true);
       _reportError(failure!, failureTrace!);
     }
-    if (_rescanQueued) {
-      _rescanQueued = false;
-      unawaited(rescan());
+    final queued = _queued;
+    if (queued != null) {
+      _queued = null;
+      unawaited(rescan().whenComplete(queued.complete));
     }
   }
 
@@ -269,6 +276,8 @@ class AntiVirtualMonitor extends ChangeNotifier
     _cancelLiveTimers();
     _liveRetryTimer?.cancel();
     _liveSubscription?.cancel();
+    _queued?.complete();
+    _queued = null;
     _reports.close();
     super.dispose();
   }

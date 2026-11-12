@@ -58,6 +58,8 @@ internal class AntiVirtualScanner(private val context: Context) {
     private val pm: PackageManager = context.packageManager
 
     fun scan(config: ScanConfig): Map<String, Map<String, Any>> {
+        // The checks run on another thread, whose stack would not show a hook on the way here.
+        val callers = Throwable().stackTrace.map { it.className }
         val checks: Map<String, () -> Detection> = linkedMapOf(
             "vpn" to ::vpn,
             "proxy" to ::proxy,
@@ -75,7 +77,7 @@ internal class AntiVirtualScanner(private val context: Context) {
             "sideloaded" to { Detection.unsupported },
             "emulator" to ::emulator,
             "rooted" to ::rooted,
-            "hooked" to ::hooked,
+            "hooked" to { hooked(callers) },
             "debugger" to ::debugger,
             "screenCapture" to ::screenCapture,
             "automation" to ::automation,
@@ -83,13 +85,14 @@ internal class AntiVirtualScanner(private val context: Context) {
             "noScreenLock" to ::noScreenLock,
             "appDataMigrated" to { DeviceBinding(context).check() }
         )
+        val deadline = SystemClock.elapsedRealtime() + CheckBudget.SCAN_LIMIT_MS
         return checks
             .filterKeys { config.signals == null || it in config.signals }
             .mapValues { (_, check) ->
-                // One failing check must never take the whole scan down, and must not
-                // look like a clean result either.
-                try { check().toMap() }
-                catch (t: Throwable) { Detection.failed(t).toMap() }
+                // One failing or hanging check must never take the whole scan down, and
+                // must not look like a clean result either.
+                val left = (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0)
+                CheckBudget.run(minOf(CheckBudget.LIMIT_MS, left), check).toMap()
             }
     }
 
@@ -408,7 +411,7 @@ internal class AntiVirtualScanner(private val context: Context) {
 
     // ---- hooks and debugger ----------------------------------------------
 
-    private fun hooked(): Detection {
+    private fun hooked(callers: List<String>): Detection {
         val evidence = HookEvidence(
             mapsLines = try { File("/proc/self/maps").readLines() } catch (_: Throwable) { null },
             threadNames = try {
@@ -423,7 +426,7 @@ internal class AntiVirtualScanner(private val context: Context) {
                 }
             }.toSet(),
             // A hooked method of the plugin shows the hooking framework in its own call stack.
-            stackClassNames = Throwable().stackTrace.map { it.className },
+            stackClassNames = callers + Throwable().stackTrace.map { it.className },
             installedPackages = installed(KnownPackages.hooking).toSet(),
             existingFiles = HookRules.FILES.filter { exists(it) }.toSet(),
             fridaPortOpen = portOpen(HookRules.FRIDA_PORT),

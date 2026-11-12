@@ -156,7 +156,7 @@ public class FlutterAntiVirtualsPlugin: NSObject, FlutterPlugin, FlutterStreamHa
     if call.method == "signPayload" {
       guard let args = call.arguments as? [String: Any], let payload = args["payload"] as? String
       else {
-        result(FlutterError(code: "bad_arguments", message: "nonce and payload are required", details: nil))
+        result(FlutterError(code: "bad_arguments", message: "payload is required", details: nil))
         return
       }
       worker.async {
@@ -531,7 +531,8 @@ final class AntiVirtualScanner {
     if let value = getenv("DYLD_INSERT_LIBRARIES"), strlen(value) > 0 {
       details.append("DYLD_INSERT_LIBRARIES is set")
     }
-    if Self.portOpen(Self.fridaPort) {
+    // Any app may listen on this port, so on its own it proves nothing.
+    if !details.isEmpty && Self.portOpen(Self.fridaPort) {
       details.append("Frida server port \(Self.fridaPort) is open")
     }
     return .of(Array(Set(details)).sorted())

@@ -96,6 +96,32 @@ final verifier = SignedReportVerifier(
 
 Without it, a chain from a device whose keys leaked still passes.
 
+### Required signals
+
+`VerificationPolicy.blockOn` rejects a report where one of those signals was
+detected. A signal the app never checked is not in the report, so it passes.
+To insist on an answer, name the signals per platform:
+
+```dart
+const VerificationPolicy(
+  android: AndroidPolicy(
+    packageNames: {'com.example.app'},
+    signingCertificateDigests: {'AB:CD:…'},
+    requiredSignals: {'rooted', 'hooked', 'emulator'},
+  ),
+  ios: IosPolicy(
+    teamId: 'ABCDE12345',
+    bundleIds: {'com.example.app'},
+    requiredSignals: {'rooted', 'hooked'},
+  ),
+);
+```
+
+A report where a required signal is missing, unsupported or failed is
+rejected with `RejectionReason.blockedSignal`. Only require what the platform
+can check: iOS reports `mockLocation` as unsupported until the app has a
+location permission.
+
 ## Play Integrity
 
 Set `AndroidPolicy(playIntegrity: PlayIntegrityPolicy())`, decode the token

@@ -409,9 +409,16 @@ internal class HookRulesTest {
             listOf("hooking file /system/xposed.prop"),
             HookRules.details(clean.copy(existingFiles = setOf("/system/xposed.prop")))
         )
+    }
+
+    @Test
+    fun theFridaPortOnlyCountsNextToOtherEvidence() {
+        assertTrue(HookRules.details(clean.copy(fridaPortOpen = true)).isEmpty())
         assertEquals(
-            listOf("Frida server port 27042 is open"),
-            HookRules.details(clean.copy(fridaPortOpen = true))
+            listOf("Frida thread gum-js-loop", "Frida server port 27042 is open"),
+            HookRules.details(
+                clean.copy(threadNames = clean.threadNames + "gum-js-loop", fridaPortOpen = true)
+            )
         )
     }
 
@@ -640,6 +647,31 @@ internal class PreparedCacheTest {
         var failed = false
         cache.get(1) { failed = it.isFailure }
         assertTrue(failed)
+    }
+}
+
+internal class CheckBudgetTest {
+    @Test
+    fun aCheckInTimeKeepsItsResult() {
+        assertEquals(Detection.of(listOf("found")), CheckBudget.run { Detection.of(listOf("found")) })
+    }
+
+    @Test
+    fun aCheckThatHangsOrThrowsFailsInsteadOfReadingClean() {
+        val hung = CheckBudget.run(limitMs = 50) {
+            Thread.sleep(5_000)
+            Detection(false)
+        }
+        assertEquals("check failed: TimeoutException", hung.error)
+        assertFalse(hung.detected)
+
+        val thrown = CheckBudget.run { throw SecurityException("denied") }
+        assertEquals("check failed: SecurityException", thrown.error)
+    }
+
+    @Test
+    fun aScanOutOfTimeFailsTheChecksThatAreLeft() {
+        assertEquals("check failed: TimeoutException", CheckBudget.run(limitMs = 0) { Detection(false) }.error)
     }
 }
 

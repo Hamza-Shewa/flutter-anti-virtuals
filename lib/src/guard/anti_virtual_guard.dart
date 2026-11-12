@@ -67,6 +67,7 @@ class AntiVirtualGuard extends StatefulWidget {
     this.rescanInterval,
     this.liveMonitoring = true,
     this.liveDebounce = const Duration(milliseconds: 500),
+    this.scanTimeout = const Duration(seconds: 10),
     this.protectScreen,
     this.failClosed = false,
     this.blockOnInstalledApps = false,
@@ -180,6 +181,11 @@ class AntiVirtualGuard extends StatefulWidget {
   /// changes (a VPN coming up touches several networks) causes one scan.
   final Duration liveDebounce;
 
+  /// A scan that takes longer than this counts as failed, so a check that
+  /// hangs cannot keep the app on the loading screen. What happens then is
+  /// what [failClosed] says. `null` waits for as long as the scan takes.
+  final Duration? scanTimeout;
+
   /// Block the app when a scan fails (first scan, or a rescan), or when the
   /// check of a signal in [blockOn] fails ([SignalResult.failed]), instead of
   /// failing open. The default screen then shows
@@ -233,6 +239,7 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
     rescanOnResume: widget.rescanOnResume,
     rescanDebounce: widget.rescanDebounce,
     liveDebounce: widget.liveDebounce,
+    scanTimeout: widget.scanTimeout,
     onReport: widget.onReport,
     onError: widget.onError,
   );
@@ -271,6 +278,7 @@ class _AntiVirtualGuardState extends State<AntiVirtualGuard>
       ..rescanOnResume = widget.rescanOnResume
       ..rescanDebounce = widget.rescanDebounce
       ..liveDebounce = widget.liveDebounce
+      ..scanTimeout = widget.scanTimeout
       ..rescanInterval = widget.rescanInterval
       ..liveMonitoring = widget.liveMonitoring;
     if (old.protectScreen != widget.protectScreen &&

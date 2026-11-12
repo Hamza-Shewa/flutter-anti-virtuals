@@ -1,3 +1,25 @@
+## 0.4.0
+
+* `AntiVirtualGuard` and `AntiVirtualMonitor` have a `scanTimeout`, 10
+  seconds by default. A scan that takes longer counts as a failed scan with a
+  `TimeoutException`, so a check that hangs no longer keeps the app on the
+  loading screen: it is let through, or blocked with `failClosed`. Pass
+  `null` for the previous behavior.
+* Android: every check has 3 seconds and a scan 8 seconds in total. A check
+  that runs out of time is reported as failed instead of holding up the scan
+  and the `verify()` and `rebindDevice()` calls behind it.
+* Fix: `AntiVirtualMonitor.rescan()` and `AntiVirtualGuard.rescan(context)`
+  returned at once when a scan was already running, before the result was in.
+  The future now completes with the scan that runs after it, so the state
+  after `await monitor.rescan()` is up to date.
+* Fix: an open port 27042 alone no longer reports `hooked` (Android and iOS).
+  Any app may listen there. The port is still reported next to other hooking
+  evidence.
+* `doc/server-verification.md`: only the leaf of a key attestation chain may
+  carry the attestation, and a server has to decide which signals it insists
+  on. `anti_virtuals_verifier` 0.3.0 fixes a forged chain it accepted.
+* The repository has a security policy, `SECURITY.md`.
+
 ## 0.3.0
 
 * Four new signals. `activeCall` fires while a phone or VoIP call is in

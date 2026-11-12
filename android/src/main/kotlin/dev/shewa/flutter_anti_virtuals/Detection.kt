@@ -1,5 +1,12 @@
 package dev.shewa.flutter_anti_virtuals
 
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+
 /** Outcome of one check, converted to a map for the platform channel. */
 internal data class Detection(
     val detected: Boolean,
@@ -32,6 +39,35 @@ internal data class Detection(
         }
 
         fun failed(error: Throwable) = Detection(false, error = "check failed: ${error.javaClass.simpleName}")
+    }
+}
+
+/**
+ * Runs one check with a time limit, so a check that hangs or throws fails alone instead of
+ * taking the scan with it. A check that ran past the limit keeps its thread until it returns.
+ */
+internal object CheckBudget {
+    const val LIMIT_MS = 3_000L
+
+    /** For all checks of one scan together, below the 10 seconds Dart waits by default. */
+    const val SCAN_LIMIT_MS = 8_000L
+
+    private val pool = Executors.newCachedThreadPool { task ->
+        Thread(task, "flutter_anti_virtuals.check").apply { isDaemon = true }
+    }
+
+    fun run(limitMs: Long = LIMIT_MS, check: () -> Detection): Detection {
+        if (limitMs <= 0) return Detection.failed(TimeoutException())
+        var pending: Future<Detection>? = null
+        return try {
+            pending = pool.submit(Callable { check() })
+            pending.get(limitMs, TimeUnit.MILLISECONDS)
+        } catch (e: ExecutionException) {
+            Detection.failed(e.cause ?: e)
+        } catch (t: Throwable) {
+            pending?.cancel(true)
+            Detection.failed(t)
+        }
     }
 }
 

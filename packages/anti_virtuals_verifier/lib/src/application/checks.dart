@@ -151,6 +151,13 @@ final class AndroidKeyAttestationCheck implements ReportCheck {
     if (chain.length < 2) {
       return reject(RejectionReason.notAttested, 'No key attestation chain');
     }
+    // An attested key is not a CA: a certificate it signs can claim anything.
+    if (chain.skip(1).any((c) => c.extensions.containsKey(keyAttestationOid))) {
+      return reject(
+        RejectionReason.untrustedChain,
+        'A certificate above the leaf carries a key attestation',
+      );
+    }
 
     for (var i = 0; i < chain.length - 1; i++) {
       if (!chain[i].isSignedBy(chain[i + 1].publicKey)) {
@@ -473,7 +480,8 @@ final class AppAttestCheck implements ReportCheck {
   }
 }
 
-/// No blocking signal was detected, and none of their checks failed.
+/// Every required signal has an answer, no blocking signal was detected, and
+/// none of their checks failed.
 final class SignalPolicyCheck implements ReportCheck {
   const SignalPolicyCheck(this._policy);
 
@@ -482,6 +490,19 @@ final class SignalPolicyCheck implements ReportCheck {
   @override
   Rejected? check(VerificationContext context) {
     final signals = context.report.signals;
+    final required = switch (context.report.platform) {
+      DevicePlatform.android => _policy.android?.requiredSignals,
+      DevicePlatform.iOS => _policy.ios?.requiredSignals,
+    };
+    for (final key in required ?? const <String>{}) {
+      final verdict = signals[key];
+      if (verdict == null || !verdict.supported || verdict.failed) {
+        return context.reject(
+          RejectionReason.blockedSignal,
+          'The required $key check gave no answer on the device',
+        );
+      }
+    }
     for (final key in _policy.blockOn) {
       final verdict = signals[key];
       if (verdict == null) continue;
