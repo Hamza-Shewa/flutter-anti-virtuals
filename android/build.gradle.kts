@@ -2,7 +2,7 @@ group = "dev.shewa.flutter_anti_virtuals"
 version = "0.4.0"
 
 buildscript {
-    val kotlinVersion = "2.4.0"
+    val kotlinVersion = "2.4.21"
     repositories {
         google()
         mavenCentral()
